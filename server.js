@@ -186,8 +186,8 @@ function createRoom(lang) {
   function drawLetters() {
     const g = room.game;
     if (!g.letterCounts.length) {
-      // garante variação: 3, 4 e 5 sempre aparecem no torneio
-      g.letterCounts = shuffle([3, 4, 5, 3 + Math.floor(Math.random() * 3), 3 + Math.floor(Math.random() * 3)]);
+      // garante variação: 2, 3 e 4 sempre aparecem no torneio (máx. 4 letras)
+      g.letterCounts = shuffle([2, 3, 4, 2 + Math.floor(Math.random() * 3), 2 + Math.floor(Math.random() * 3)]);
     }
     const count = g.letterCounts[(g.round - 1) % g.letterCounts.length];
     for (let attempt = 0; attempt < 20; attempt++) {
