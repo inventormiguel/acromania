@@ -21,6 +21,9 @@ const FINAL_MS = 25_000;
 const POINTS_PER_VOTE = 100;
 const MIN_PLAYERS_TO_START = 2;
 const RANKING_TOP = 10;
+const CHAT_LOG_MAX = 50;
+const CHAT_MAX_LEN = 200;
+const CHAT_MIN_INTERVAL_MS = 500; // anti-flood
 
 // temas nos dois idiomas — cada sala usa só o idioma dela
 const THEMES = [
@@ -153,6 +156,7 @@ function createRoom(lang) {
     scoresByName: new Map(),
     game: null,
     phaseTimer: null,
+    chatLog: [],
   };
 
   function freshGame() {
@@ -261,6 +265,17 @@ function createRoom(lang) {
     try { p.ws.send(JSON.stringify(publicState(p))); } catch (_) {}
   };
   room.broadcast = () => { for (const p of room.activePlayers()) room.send(p); };
+
+  // chat da sala: mensagens de jogador ({name, text}) e de sistema ({system: 'joined'|'left', name})
+  room.chat = (msg) => {
+    msg.ts = Date.now();
+    room.chatLog.push(msg);
+    if (room.chatLog.length > CHAT_LOG_MAX) room.chatLog.shift();
+    const payload = JSON.stringify({ type: 'chat', ...msg });
+    for (const p of room.activePlayers()) {
+      try { p.ws.send(payload); } catch (_) {}
+    }
+  };
 
   function setPhase(phase, durationMs, onEnd) {
     room.game.phase = phase;
@@ -383,17 +398,22 @@ function createRoom(lang) {
     };
     room.players.set(ws, player);
     room.broadcast();
+    try { ws.send(JSON.stringify({ type: 'chatHistory', messages: room.chatLog })); } catch (_) {}
+    room.chat({ system: 'joined', name: player.name });
     return player;
   };
 
   room.leave = (ws) => {
-    if (!room.players.has(ws)) return;
+    const player = room.players.get(ws);
+    if (!player) return;
     room.players.delete(ws);
     if (room.players.size === 0) {
       clearTimeout(room.phaseTimer);
       room.game = freshGame();
       room.scoresByName = new Map();
+      room.chatLog = [];
     } else {
+      room.chat({ system: 'left', name: player.name });
       room.broadcast();
       room.maybeEndWritingEarly();
       room.maybeEndVotingEarly();
@@ -439,6 +459,16 @@ wss.on('connection', (ws) => {
       me = null;
       room = null;
       ws.send(JSON.stringify({ type: 'left' }));
+      return;
+    }
+
+    if (msg.type === 'chat') {
+      const text = String(msg.text || '').trim().slice(0, CHAT_MAX_LEN);
+      if (!text) return;
+      const nowTs = Date.now();
+      if (me.lastChatAt && nowTs - me.lastChatAt < CHAT_MIN_INTERVAL_MS) return; // anti-flood
+      me.lastChatAt = nowTs;
+      room.chat({ name: me.name, text });
       return;
     }
 

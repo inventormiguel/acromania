@@ -42,7 +42,22 @@
     font-weight: 800;
   }
   .tagline { color: var(--muted); margin-bottom: 20px; font-size: 14px; }
-  .screen { width: 100%; max-width: 560px; display: none; flex-direction: column; gap: 14px; }
+
+  /* layout: jogo à esquerda, chat à direita (empilha no celular) */
+  .layout {
+    display: flex; gap: 16px; width: 100%; max-width: 920px;
+    justify-content: center; align-items: flex-start;
+  }
+  #game-col { flex: 1 1 560px; max-width: 560px; min-width: 0; }
+  #chat-col { flex: 0 0 320px; display: none; position: sticky; top: 54px; }
+  #chat-col.show { display: block; }
+  @media (max-width: 919px) {
+    .layout { flex-direction: column; align-items: center; }
+    #game-col { width: 100%; }
+    #chat-col { position: static; width: 100%; max-width: 560px; flex: none; }
+  }
+
+  .screen { width: 100%; display: none; flex-direction: column; gap: 14px; }
   .screen.active { display: flex; }
   .card {
     background: var(--card);
@@ -189,6 +204,19 @@
     font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px;
     color: var(--muted); margin-bottom: 8px;
   }
+
+  /* chat */
+  #chat-list {
+    height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+    padding-right: 4px; margin-bottom: 10px;
+  }
+  @media (max-width: 919px) { #chat-list { height: 220px; } }
+  .msg { font-size: 14px; line-height: 1.4; word-break: break-word; }
+  .msg b { margin-right: 4px; }
+  .msg.sys { color: var(--muted); font-style: italic; font-size: 13px; }
+  .chat-row { display: flex; gap: 8px; }
+  .chat-row input { flex: 1; padding: 10px 14px; font-size: 15px; }
+  .chat-row button { flex: 0 0 auto; padding: 10px 14px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -204,6 +232,9 @@
   </div>
   <h1 class="logo">Acromania</h1>
   <div class="tagline" data-i18n="tagline"></div>
+
+  <div class="layout">
+  <div id="game-col">
 
   <!-- JOIN -->
   <div class="screen active" id="s-join">
@@ -302,6 +333,21 @@
     </div>
   </div>
 
+  </div><!-- /game-col -->
+
+  <!-- CHAT DA SALA -->
+  <aside id="chat-col">
+    <div class="card">
+      <div class="section-title" data-i18n="chatTitle"></div>
+      <div id="chat-list"></div>
+      <div class="chat-row">
+        <input type="text" id="chat-input" maxlength="200" autocomplete="off">
+        <button id="chat-send" data-i18n="chatSend"></button>
+      </div>
+    </div>
+  </aside>
+  </div><!-- /layout -->
+
 <script>
 // ------------------------------------------------------------------ i18n
 const I18N = {
@@ -346,6 +392,11 @@ const I18N = {
     spectNotice: '⏳ Rodada em andamento — você joga na próxima!',
     changeLangLocked: 'Pra trocar de idioma, sai da sala primeiro.',
     waitRound: 'Você entra na próxima rodada!',
+    chatTitle: '💬 Chat da sala',
+    chatPh: 'Manda uma mensagem…',
+    chatSend: 'Enviar',
+    sysJoined: '👋 {name} entrou na sala',
+    sysLeft: '🚪 {name} saiu da sala',
     needName: 'Escolhe um nome aí!',
     nameTaken: 'Já tem alguém com esse nome na sala.',
     minPlayers: 'Precisa de pelo menos {n} jogadores.',
@@ -393,6 +444,11 @@ const I18N = {
     spectNotice: "⏳ Round in progress — you'll play in the next one!",
     changeLangLocked: 'To change language, leave the room first.',
     waitRound: "You'll join in the next round!",
+    chatTitle: '💬 Room chat',
+    chatPh: 'Type a message…',
+    chatSend: 'Send',
+    sysJoined: '👋 {name} joined the room',
+    sysLeft: '🚪 {name} left the room',
     needName: 'Pick a name!',
     nameTaken: 'Someone in the room already has that name.',
     minPlayers: 'You need at least {n} players.',
@@ -420,6 +476,7 @@ function applyStatic() {
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
   $('name').placeholder = t('namePh');
   $('phrase').placeholder = t('phrasePh');
+  $('chat-input').placeholder = t('chatPh');
   $('conn').textContent = t('reconnecting');
   $('btn-leave').textContent = t('leave');
   $('lang-pt').classList.toggle('active', lang === 'pt');
@@ -464,8 +521,15 @@ function connect() {
       joined = false;
       state = null;
       updateTopbar();
+      $('chat-list').innerHTML = '';
       return show('s-join');
     }
+    if (msg.type === 'chatHistory') {
+      $('chat-list').innerHTML = '';
+      msg.messages.forEach(appendChat);
+      return;
+    }
+    if (msg.type === 'chat') return appendChat(msg);
     if (msg.type === 'state') {
       const prevPhase = state?.phase;
       state = msg;
@@ -490,7 +554,42 @@ function showError(text) {
 function updateTopbar() {
   $('langbar').classList.toggle('locked', joined);
   $('btn-leave').classList.toggle('show', joined);
+  $('chat-col').classList.toggle('show', joined);
 }
+
+// ---- chat
+const CHAT_COLORS = ['#ffb703', '#ff006e', '#06d6a0', '#3a86ff', '#c77dff', '#fb5607', '#80ed99', '#f72585'];
+function nameColor(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return CHAT_COLORS[h % CHAT_COLORS.length];
+}
+
+function appendChat(msg) {
+  const list = $('chat-list');
+  const div = document.createElement('div');
+  if (msg.system) {
+    div.className = 'msg sys';
+    div.textContent = t(msg.system === 'joined' ? 'sysJoined' : 'sysLeft', { name: msg.name });
+  } else {
+    div.className = 'msg';
+    div.innerHTML = `<b style="color:${nameColor(msg.name)}">${esc(msg.name)}</b>${esc(msg.text)}`;
+  }
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.appendChild(div);
+  while (list.children.length > 80) list.removeChild(list.firstChild);
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
+
+function sendChat() {
+  const text = $('chat-input').value.trim();
+  if (!text) return;
+  sendMsg({ type: 'chat', text });
+  $('chat-input').value = '';
+  $('chat-input').focus();
+}
+$('chat-send').onclick = sendChat;
+$('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 
 // ---- join / leave
 $('btn-join').onclick = join;
