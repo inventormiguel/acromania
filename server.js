@@ -78,7 +78,8 @@ const THEMES = [
 const LETTERS = 'AABBCCDDEEFFGGIJLLMMNNOOPPQRRSSTTUV';
 
 // ---------------------------------------------------------------- ranking (banquinho de dados em JSON)
-const DATA_DIR = path.join(__dirname, 'data');
+// DATA_DIR configurável: aponta pra um volume persistente em produção (ex: Railway → /data)
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'ranking.json');
 
 let ranking = { pt: {}, en: {} }; // lang -> { chaveMinúscula: {name, points, wins, games} }

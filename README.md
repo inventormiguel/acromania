@@ -19,6 +19,11 @@ Pra jogar com gente de fora, um túnel resolve:
 cloudflared tunnel --url http://localhost:8477
 ```
 
+## Publicar online (Railway)
+
+Servidor WebSocket persistente — roda em Railway/Render/Fly sem alterar código (não roda em
+Vercel serverless). Passo a passo em [DEPLOY.md](DEPLOY.md).
+
 ## Stack
 
 - **Servidor**: Node.js + Express + ws (WebSocket) — toda a lógica do jogo em [server.js](server.js)
