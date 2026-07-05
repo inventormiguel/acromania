@@ -7,6 +7,48 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 8477;
 
 const app = express();
+app.set('trust proxy', true); // atrás do proxy da Railway: pega o IP real do cliente
+
+// ---- detecção de idioma por IP: Brasil → pt, resto do mundo → en
+const geoCache = new Map(); // ip -> 'pt' | 'en'
+
+function isLocalIp(ip) {
+  ip = (ip || '').replace(/^::ffff:/, '');
+  return !ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('10.') ||
+    ip.startsWith('192.168.') || /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ||
+    ip.startsWith('169.254.') || ip.startsWith('fc') || ip.startsWith('fd');
+}
+
+async function langForRequest(req) {
+  // Cloudflare (se um dia entrar na frente) já entrega o país de graça
+  const cf = req.headers['cf-ipcountry'];
+  if (cf && cf !== 'XX' && cf !== 'T1') return cf === 'BR' ? 'pt' : 'en';
+
+  const ip = ((req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '';
+  const acceptPt = (req.headers['accept-language'] || '').toLowerCase().startsWith('pt');
+
+  // localhost/rede interna: não dá pra geolocalizar → usa o idioma do navegador como palpite
+  if (isLocalIp(ip)) return acceptPt ? 'pt' : 'en';
+  if (geoCache.has(ip)) return geoCache.get(ip);
+
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 2500);
+    const resp = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: ctrl.signal });
+    clearTimeout(to);
+    const data = await resp.json();
+    const lang = data && data.country_code === 'BR' ? 'pt' : 'en';
+    geoCache.set(ip, lang);
+    return lang;
+  } catch (_) {
+    return acceptPt ? 'pt' : 'en'; // geo falhou: cai no idioma do navegador
+  }
+}
+
+app.get('/api/lang', async (req, res) => {
+  res.json({ lang: await langForRequest(req) });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);

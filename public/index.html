@@ -547,6 +547,16 @@ $('lang-pt').onclick = () => setLang('pt');
 $('lang-en').onclick = () => setLang('en');
 applyStatic();
 
+// idioma automático pelo IP (Brasil → pt, fora → en) — só se a pessoa ainda não escolheu manualmente
+if (!localStorage.getItem('acromania_lang')) {
+  fetch('/api/lang').then((r) => r.json()).then((d) => {
+    if (d && d.lang && !localStorage.getItem('acromania_lang') && !joined && d.lang !== lang) {
+      lang = d.lang;
+      applyStatic();
+    }
+  }).catch(() => {});
+}
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
