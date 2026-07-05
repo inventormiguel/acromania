@@ -28,6 +28,7 @@
     flex-direction: column;
     align-items: center;
     padding: 16px;
+    padding-top: 54px;
   }
   h1.logo {
     font-size: 44px;
@@ -73,14 +74,15 @@
   }
   button:active { transform: scale(.97); }
   button:disabled { opacity: .4; cursor: default; }
-  button.secondary { background: var(--card2); border: 1px solid #4a2d73; }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
 
-  /* seletor de idioma */
-  .langbar {
-    position: fixed; top: 10px; left: 12px; display: flex; gap: 6px; z-index: 10;
+  /* barra do topo: idioma + sair */
+  .topbar {
+    position: fixed; top: 10px; left: 12px; right: 12px;
+    display: flex; justify-content: space-between; align-items: center; z-index: 10;
   }
+  .langbar { display: flex; gap: 6px; }
   .langbar button {
     padding: 6px 12px; font-size: 14px; border-radius: 20px;
     background: var(--card2); border: 1px solid #4a2d73; color: var(--muted);
@@ -89,6 +91,15 @@
     background: linear-gradient(90deg, var(--purple), var(--blue));
     color: #fff; border-color: transparent;
   }
+  .langbar.locked button { opacity: .55; cursor: not-allowed; }
+  #btn-leave {
+    padding: 6px 12px; font-size: 14px; border-radius: 20px;
+    background: var(--card2); border: 1px solid #4a2d73; color: var(--muted);
+    display: none;
+  }
+  #btn-leave.show { display: block; }
+  .conn { font-size: 12px; color: var(--pink); display: none; margin-right: 10px; }
+  .conn.show { display: inline; }
 
   /* header de rodada */
   .roundbar {
@@ -129,6 +140,10 @@
   }
   .error.show { display: block; }
   .waiting { text-align: center; color: var(--green); font-weight: 700; font-size: 16px; }
+  .spect {
+    text-align: center; color: var(--accent); font-weight: 700; font-size: 15px;
+    background: #3a250e; border: 1px dashed var(--accent); border-radius: 12px; padding: 12px;
+  }
 
   /* votação */
   .entry {
@@ -137,7 +152,7 @@
     line-height: 1.4;
   }
   .entry:active { transform: scale(.98); }
-  .entry.mine { opacity: .55; cursor: default; border-style: dashed; }
+  .entry.mine, .entry.locked { opacity: .55; cursor: default; border-style: dashed; }
   .entry.voted { border-color: var(--green); background: #14382f; }
   .entry .tag { font-size: 12px; color: var(--muted); display: block; margin-top: 6px; }
 
@@ -152,15 +167,18 @@
   .result.winner { border: 2px solid var(--accent); }
   .result.winner .phrase::before { content: '👑 '; }
 
-  /* placar */
+  /* placar e ranking */
   .board { display: flex; flex-direction: column; gap: 8px; }
   .prow {
     display: flex; justify-content: space-between; align-items: center;
     background: var(--card2); border-radius: 10px; padding: 10px 14px; font-size: 15px;
   }
   .prow .status { font-size: 12px; color: var(--green); margin-left: 8px; }
+  .prow .wait { font-size: 12px; color: var(--accent); margin-left: 8px; }
   .prow .score { font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
   .prow.me { border: 1px solid var(--purple); }
+  .prow .pos { color: var(--muted); margin-right: 8px; min-width: 24px; display: inline-block; }
+  .prow .wins { font-size: 12px; color: var(--muted); margin-left: 8px; }
 
   /* pódio */
   .podium { text-align: center; }
@@ -171,18 +189,19 @@
     font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px;
     color: var(--muted); margin-bottom: 8px;
   }
-  .conn {
-    position: fixed; top: 10px; right: 12px; font-size: 12px; color: var(--pink); display: none;
-  }
-  .conn.show { display: block; }
 </style>
 </head>
 <body>
-  <div class="langbar">
-    <button id="lang-pt">🇧🇷 PT</button>
-    <button id="lang-en">🇺🇸 EN</button>
+  <div class="topbar">
+    <div class="langbar" id="langbar">
+      <button id="lang-pt">🇧🇷 PT</button>
+      <button id="lang-en">🇺🇸 EN</button>
+    </div>
+    <div>
+      <span class="conn" id="conn"></span>
+      <button id="btn-leave"></button>
+    </div>
   </div>
-  <div class="conn" id="conn"></div>
   <h1 class="logo">Acromania</h1>
   <div class="tagline" data-i18n="tagline"></div>
 
@@ -194,6 +213,7 @@
         <input type="text" id="name" maxlength="20" autocomplete="off">
         <button id="btn-join" style="flex:0 0 auto" data-i18n="join"></button>
       </div>
+      <div class="hint" style="margin-top:10px" data-i18n="roomHint"></div>
       <div class="error" id="err-join"></div>
     </div>
   </div>
@@ -207,6 +227,10 @@
     <button id="btn-start"></button>
     <div class="hint" data-i18n="shareHint"></div>
     <div class="error" id="err-lobby"></div>
+    <div class="card">
+      <div class="section-title" data-i18n="rankingTitle"></div>
+      <div class="board" id="lobby-ranking"></div>
+    </div>
   </div>
 
   <!-- ESCRITA -->
@@ -225,6 +249,7 @@
         <div class="error" id="err-write"></div>
       </div>
       <div class="waiting" id="w-waiting" style="display:none" data-i18n="sent"></div>
+      <div class="spect" id="w-spect" style="display:none" data-i18n="spectNotice"></div>
     </div>
     <div class="card">
       <div class="section-title" data-i18n="playersTitle"></div>
@@ -240,7 +265,7 @@
         <span class="timer" id="v-timer"></span>
       </div>
       <div class="theme" id="v-theme"></div>
-      <div class="hint" style="margin-top:6px" data-i18n="voteHint"></div>
+      <div class="hint" style="margin-top:6px" id="v-hint"></div>
     </div>
     <div id="v-entries" style="display:flex;flex-direction:column;gap:10px"></div>
     <div class="error" id="err-vote"></div>
@@ -271,6 +296,10 @@
       <div class="board" id="f-board" style="text-align:left;margin-top:14px"></div>
       <div class="hint" style="margin-top:14px"><span data-i18n="backLobby"></span> <span id="f-timer"></span></div>
     </div>
+    <div class="card">
+      <div class="section-title" data-i18n="rankingTitle"></div>
+      <div class="board" id="f-ranking"></div>
+    </div>
   </div>
 
 <script>
@@ -281,6 +310,8 @@ const I18N = {
     askName: 'Como você quer ser chamado?',
     namePh: 'Seu nome',
     join: 'Entrar',
+    roomHint: '🇧🇷 Você vai entrar na sala em português — troca o idioma lá em cima antes de entrar.',
+    roomHintEn: '🇺🇸 You are joining the English room — switch the language up top before joining.',
     lobbyTitle: 'Sala de espera',
     start: 'Começar torneio (5 rodadas)',
     waitingPlayers: 'Esperando mais jogadores… (mínimo 2)',
@@ -306,7 +337,15 @@ const I18N = {
     reconnecting: 'reconectando…',
     statusSent: '✅ enviou',
     statusVoted: '🗳️ votou',
+    waitingTag: '⏳ entra na próxima',
     leftGame: '(saiu do jogo)',
+    leave: '🚪 Sair da sala',
+    rankingTitle: '🏆 Ranking geral',
+    noRanking: 'Ainda não tem ninguém no ranking — joga a primeira partida!',
+    winsLabel: '{n}× campeão',
+    spectNotice: '⏳ Rodada em andamento — você joga na próxima!',
+    changeLangLocked: 'Pra trocar de idioma, sai da sala primeiro.',
+    waitRound: 'Você entra na próxima rodada!',
     needName: 'Escolhe um nome aí!',
     nameTaken: 'Já tem alguém com esse nome na sala.',
     minPlayers: 'Precisa de pelo menos {n} jogadores.',
@@ -319,6 +358,7 @@ const I18N = {
     askName: 'What should we call you?',
     namePh: 'Your name',
     join: 'Join',
+    roomHint: '🇺🇸 You are joining the English room — switch the language up top before joining.',
     lobbyTitle: 'Waiting room',
     start: 'Start tournament (5 rounds)',
     waitingPlayers: 'Waiting for more players… (minimum 2)',
@@ -344,7 +384,15 @@ const I18N = {
     reconnecting: 'reconnecting…',
     statusSent: '✅ sent',
     statusVoted: '🗳️ voted',
+    waitingTag: '⏳ joins next round',
     leftGame: '(left the game)',
+    leave: '🚪 Leave room',
+    rankingTitle: '🏆 All-time ranking',
+    noRanking: 'Nobody in the ranking yet — play the first game!',
+    winsLabel: '{n}× champion',
+    spectNotice: "⏳ Round in progress — you'll play in the next one!",
+    changeLangLocked: 'To change language, leave the room first.',
+    waitRound: "You'll join in the next round!",
     needName: 'Pick a name!',
     nameTaken: 'Someone in the room already has that name.',
     minPlayers: 'You need at least {n} players.',
@@ -373,15 +421,16 @@ function applyStatic() {
   $('name').placeholder = t('namePh');
   $('phrase').placeholder = t('phrasePh');
   $('conn').textContent = t('reconnecting');
+  $('btn-leave').textContent = t('leave');
   $('lang-pt').classList.toggle('active', lang === 'pt');
   $('lang-en').classList.toggle('active', lang === 'en');
 }
 
 function setLang(l) {
+  if (joined) return showError(t('changeLangLocked')); // dentro da sala não troca
   lang = l;
   localStorage.setItem('acromania_lang', l);
   applyStatic();
-  if (state) render(state.phase); // re-render textos dinâmicos da fase atual
 }
 
 // ------------------------------------------------------------------ jogo
@@ -402,7 +451,7 @@ function connect() {
   ws = new WebSocket(`${proto}://${location.host}`);
   ws.onopen = () => {
     $('conn').classList.remove('show');
-    if (joined && myName) ws.send(JSON.stringify({ type: 'join', name: myName }));
+    if (joined && myName) ws.send(JSON.stringify({ type: 'join', name: myName, lang }));
   };
   ws.onclose = () => {
     $('conn').classList.add('show');
@@ -411,6 +460,12 @@ function connect() {
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'error') return showError(t(msg.code, msg.params));
+    if (msg.type === 'left') {
+      joined = false;
+      state = null;
+      updateTopbar();
+      return show('s-join');
+    }
     if (msg.type === 'state') {
       const prevPhase = state?.phase;
       state = msg;
@@ -432,7 +487,12 @@ function showError(text) {
   setTimeout(() => el.classList.remove('show'), 3500);
 }
 
-// ---- join
+function updateTopbar() {
+  $('langbar').classList.toggle('locked', joined);
+  $('btn-leave').classList.toggle('show', joined);
+}
+
+// ---- join / leave
 $('btn-join').onclick = join;
 $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
 function join() {
@@ -441,9 +501,11 @@ function join() {
   myName = name;
   localStorage.setItem('acromania_name', name);
   joined = true;
-  sendMsg({ type: 'join', name });
+  updateTopbar();
+  sendMsg({ type: 'join', name, lang });
 }
 
+$('btn-leave').onclick = () => sendMsg({ type: 'leave' });
 $('btn-start').onclick = () => sendMsg({ type: 'start' });
 
 // ---- escrita
@@ -472,8 +534,9 @@ function paintLetterFeedback() {
 
 // ---- votação (delegação)
 $('v-entries').onclick = (e) => {
+  if (state?.youSpectator) return;
   const el = e.target.closest('.entry');
-  if (!el || el.classList.contains('mine')) return;
+  if (!el || el.classList.contains('mine') || el.classList.contains('locked')) return;
   sendMsg({ type: 'vote', idx: Number(el.dataset.idx) });
 };
 
@@ -501,11 +564,31 @@ function playerRows(containerId, showStatus) {
     const div = document.createElement('div');
     div.className = 'prow' + (p.id === state.you.id ? ' me' : '');
     let status = '';
-    if (showStatus === 'writing' && p.submitted) status = `<span class="status">${t('statusSent')}</span>`;
-    if (showStatus === 'voting' && p.voted) status = `<span class="status">${t('statusVoted')}</span>`;
+    if (p.waiting) status = `<span class="wait">${t('waitingTag')}</span>`;
+    else if (showStatus === 'writing' && p.submitted) status = `<span class="status">${t('statusSent')}</span>`;
+    else if (showStatus === 'voting' && p.voted) status = `<span class="status">${t('statusVoted')}</span>`;
     div.innerHTML = `<span>${esc(p.name)}${status}</span><span class="score">${p.score} pts</span>`;
     c.appendChild(div);
   }
+}
+
+function rankingRows(containerId) {
+  const c = $(containerId);
+  c.innerHTML = '';
+  const list = state.ranking || [];
+  if (!list.length) {
+    c.innerHTML = `<div class="hint">${t('noRanking')}</div>`;
+    return;
+  }
+  list.forEach((r, i) => {
+    const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}º`;
+    const isMe = joined && r.name.toLowerCase() === myName.toLowerCase();
+    const wins = r.wins > 0 ? `<span class="wins">${t('winsLabel', { n: r.wins })}</span>` : '';
+    const div = document.createElement('div');
+    div.className = 'prow' + (isMe ? ' me' : '');
+    div.innerHTML = `<span><span class="pos">${medal}</span>${esc(r.name)}${wins}</span><span class="score">${r.points} pts</span>`;
+    c.appendChild(div);
+  });
 }
 
 function esc(s) {
@@ -526,11 +609,12 @@ function renderLetters(containerId) {
 }
 
 function render(prevPhase) {
-  if (!joined) return show('s-join');
+  if (!joined || !state) return show('s-join');
 
   if (state.phase === 'lobby') {
     show('s-lobby');
     playerRows('lobby-players');
+    rankingRows('lobby-ranking');
     $('btn-start').disabled = state.players.length < 2;
     $('btn-start').textContent = state.players.length < 2 ? t('waitingPlayers') : t('start');
     return;
@@ -545,8 +629,10 @@ function render(prevPhase) {
       $('phrase').value = '';
       paintLetterFeedback();
     }
-    $('w-form').style.display = state.youSubmitted ? 'none' : 'block';
-    $('w-waiting').style.display = state.youSubmitted ? 'block' : 'none';
+    const spect = state.youSpectator;
+    $('w-form').style.display = (!spect && !state.youSubmitted) ? 'block' : 'none';
+    $('w-waiting').style.display = (!spect && state.youSubmitted) ? 'block' : 'none';
+    $('w-spect').style.display = spect ? 'block' : 'none';
     playerRows('w-players', 'writing');
     return;
   }
@@ -555,13 +641,14 @@ function render(prevPhase) {
     show('s-voting');
     $('v-round').textContent = t('roundVoting', { r: state.round, t: state.totalRounds });
     $('v-theme').textContent = themeText(state.theme);
+    $('v-hint').textContent = state.youSpectator ? t('spectNotice') : t('voteHint');
     const c = $('v-entries');
     c.innerHTML = '';
     for (const e of state.entries) {
       const div = document.createElement('div');
       const mine = e.idx === state.yourEntryIdx;
       const voted = e.idx === state.yourVote;
-      div.className = 'entry' + (mine ? ' mine' : '') + (voted ? ' voted' : '');
+      div.className = 'entry' + (mine ? ' mine' : '') + (voted ? ' voted' : '') + (state.youSpectator ? ' locked' : '');
       div.dataset.idx = e.idx;
       div.innerHTML = `“${esc(e.text)}”` + (mine ? `<span class="tag">${t('yours')}</span>` : voted ? `<span class="tag">${t('yourVote')}</span>` : '');
       c.appendChild(div);
@@ -610,6 +697,7 @@ function render(prevPhase) {
       div.innerHTML = `<span>${medal} ${esc(p.name)}</span><span class="score">${p.score} pts</span>`;
       c.appendChild(div);
     });
+    rankingRows('f-ranking');
     return;
   }
 }
