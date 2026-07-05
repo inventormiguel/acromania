@@ -77,6 +77,19 @@
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
 
+  /* seletor de idioma */
+  .langbar {
+    position: fixed; top: 10px; left: 12px; display: flex; gap: 6px; z-index: 10;
+  }
+  .langbar button {
+    padding: 6px 12px; font-size: 14px; border-radius: 20px;
+    background: var(--card2); border: 1px solid #4a2d73; color: var(--muted);
+  }
+  .langbar button.active {
+    background: linear-gradient(90deg, var(--purple), var(--blue));
+    color: #fff; border-color: transparent;
+  }
+
   /* header de rodada */
   .roundbar {
     display: flex; justify-content: space-between; align-items: center;
@@ -112,6 +125,7 @@
   .error {
     background: #4a1030; border: 1px solid var(--pink); color: #ffb3d1;
     border-radius: 10px; padding: 10px 14px; font-size: 14px; display: none;
+    margin-top: 8px;
   }
   .error.show { display: block; }
   .waiting { text-align: center; color: var(--green); font-weight: 700; font-size: 16px; }
@@ -164,17 +178,21 @@
 </style>
 </head>
 <body>
-  <div class="conn" id="conn">reconectando…</div>
+  <div class="langbar">
+    <button id="lang-pt">🇧🇷 PT</button>
+    <button id="lang-en">🇺🇸 EN</button>
+  </div>
+  <div class="conn" id="conn"></div>
   <h1 class="logo">Acromania</h1>
-  <div class="tagline">tema + letras sorteadas → a frase mais criativa vence</div>
+  <div class="tagline" data-i18n="tagline"></div>
 
   <!-- JOIN -->
   <div class="screen active" id="s-join">
     <div class="card">
-      <div class="section-title">Como você quer ser chamado?</div>
+      <div class="section-title" data-i18n="askName"></div>
       <div class="row">
-        <input type="text" id="name" maxlength="20" placeholder="Seu nome" autocomplete="off">
-        <button id="btn-join" style="flex:0 0 auto">Entrar</button>
+        <input type="text" id="name" maxlength="20" autocomplete="off">
+        <button id="btn-join" style="flex:0 0 auto" data-i18n="join"></button>
       </div>
       <div class="error" id="err-join"></div>
     </div>
@@ -183,11 +201,11 @@
   <!-- LOBBY -->
   <div class="screen" id="s-lobby">
     <div class="card">
-      <div class="section-title">Sala de espera</div>
+      <div class="section-title" data-i18n="lobbyTitle"></div>
       <div class="board" id="lobby-players"></div>
     </div>
-    <button id="btn-start">Começar torneio (5 rodadas)</button>
-    <div class="hint">Compartilha o link com a galera — dá pra entrar até no meio da partida.</div>
+    <button id="btn-start"></button>
+    <div class="hint" data-i18n="shareHint"></div>
     <div class="error" id="err-lobby"></div>
   </div>
 
@@ -201,15 +219,15 @@
       <div class="theme" id="w-theme"></div>
       <div class="letters" id="w-letters"></div>
       <div id="w-form">
-        <input type="text" id="phrase" maxlength="120" placeholder="Escreve tua frase aqui…" autocomplete="off">
-        <div class="hint" style="margin:8px 0">Cada palavra começa com a letra na ordem</div>
-        <button id="btn-submit" style="width:100%">Enviar frase</button>
+        <input type="text" id="phrase" maxlength="120" autocomplete="off">
+        <div class="hint" style="margin:8px 0" data-i18n="orderHint"></div>
+        <button id="btn-submit" style="width:100%" data-i18n="submit"></button>
         <div class="error" id="err-write"></div>
       </div>
-      <div class="waiting" id="w-waiting" style="display:none">✅ Frase enviada! Esperando os outros…</div>
+      <div class="waiting" id="w-waiting" style="display:none" data-i18n="sent"></div>
     </div>
     <div class="card">
-      <div class="section-title">Jogadores</div>
+      <div class="section-title" data-i18n="playersTitle"></div>
       <div class="board" id="w-players"></div>
     </div>
   </div>
@@ -222,7 +240,7 @@
         <span class="timer" id="v-timer"></span>
       </div>
       <div class="theme" id="v-theme"></div>
-      <div class="hint" style="margin-top:6px">Vota na melhor frase (na sua não vale 😄)</div>
+      <div class="hint" style="margin-top:6px" data-i18n="voteHint"></div>
     </div>
     <div id="v-entries" style="display:flex;flex-direction:column;gap:10px"></div>
     <div class="error" id="err-vote"></div>
@@ -239,7 +257,7 @@
     </div>
     <div id="r-entries" style="display:flex;flex-direction:column;gap:10px"></div>
     <div class="card">
-      <div class="section-title">Placar</div>
+      <div class="section-title" data-i18n="scoreTitle"></div>
       <div class="board" id="r-players"></div>
     </div>
   </div>
@@ -248,14 +266,125 @@
   <div class="screen" id="s-final">
     <div class="card podium">
       <div class="confetti">🎉🏆🎉</div>
-      <div class="section-title">Campeão do torneio</div>
+      <div class="section-title" data-i18n="championTitle"></div>
       <div class="champion" id="f-champion"></div>
       <div class="board" id="f-board" style="text-align:left;margin-top:14px"></div>
-      <div class="hint" style="margin-top:14px">Voltando pra sala de espera… <span id="f-timer"></span></div>
+      <div class="hint" style="margin-top:14px"><span data-i18n="backLobby"></span> <span id="f-timer"></span></div>
     </div>
   </div>
 
 <script>
+// ------------------------------------------------------------------ i18n
+const I18N = {
+  pt: {
+    tagline: 'tema + letras sorteadas → a frase mais criativa vence',
+    askName: 'Como você quer ser chamado?',
+    namePh: 'Seu nome',
+    join: 'Entrar',
+    lobbyTitle: 'Sala de espera',
+    start: 'Começar torneio (5 rodadas)',
+    waitingPlayers: 'Esperando mais jogadores… (mínimo 2)',
+    shareHint: 'Compartilha o link com a galera — dá pra entrar até no meio da partida.',
+    round: 'Rodada {r} de {t}',
+    roundVoting: 'Rodada {r} de {t} — votação',
+    roundResults: 'Rodada {r} de {t} — resultado',
+    phrasePh: 'Escreve tua frase aqui…',
+    orderHint: 'Cada palavra começa com a letra na ordem',
+    submit: 'Enviar frase',
+    sent: '✅ Frase enviada! Esperando os outros…',
+    playersTitle: 'Jogadores',
+    voteHint: 'Vota na melhor frase (na sua não vale 😄)',
+    yours: 'essa é a sua 😉',
+    yourVote: 'seu voto ✅',
+    by: 'por',
+    vote1: 'voto',
+    voteN: 'votos',
+    scoreTitle: 'Placar',
+    nobody: '😴 Ninguém enviou frase nessa rodada…',
+    championTitle: 'Campeão do torneio',
+    backLobby: 'Voltando pra sala de espera…',
+    reconnecting: 'reconectando…',
+    statusSent: '✅ enviou',
+    statusVoted: '🗳️ votou',
+    leftGame: '(saiu do jogo)',
+    needName: 'Escolhe um nome aí!',
+    nameTaken: 'Já tem alguém com esse nome na sala.',
+    minPlayers: 'Precisa de pelo menos {n} jogadores.',
+    wordCount: 'A frase precisa ter exatamente {n} palavras (uma pra cada letra).',
+    wordLetter: 'A palavra {i} ("{word}") precisa começar com {letter}.',
+    selfVote: 'Votar em si mesmo não vale, belesma!',
+  },
+  en: {
+    tagline: 'a theme + random letters → the most creative phrase wins',
+    askName: 'What should we call you?',
+    namePh: 'Your name',
+    join: 'Join',
+    lobbyTitle: 'Waiting room',
+    start: 'Start tournament (5 rounds)',
+    waitingPlayers: 'Waiting for more players… (minimum 2)',
+    shareHint: 'Share the link with your friends — you can join even mid-game.',
+    round: 'Round {r} of {t}',
+    roundVoting: 'Round {r} of {t} — voting',
+    roundResults: 'Round {r} of {t} — results',
+    phrasePh: 'Type your phrase here…',
+    orderHint: 'Each word starts with the letters, in order',
+    submit: 'Submit phrase',
+    sent: '✅ Phrase sent! Waiting for the others…',
+    playersTitle: 'Players',
+    voteHint: "Vote for the best phrase (your own doesn't count 😄)",
+    yours: "this one's yours 😉",
+    yourVote: 'your vote ✅',
+    by: 'by',
+    vote1: 'vote',
+    voteN: 'votes',
+    scoreTitle: 'Scoreboard',
+    nobody: '😴 Nobody submitted a phrase this round…',
+    championTitle: 'Tournament champion',
+    backLobby: 'Back to the waiting room…',
+    reconnecting: 'reconnecting…',
+    statusSent: '✅ sent',
+    statusVoted: '🗳️ voted',
+    leftGame: '(left the game)',
+    needName: 'Pick a name!',
+    nameTaken: 'Someone in the room already has that name.',
+    minPlayers: 'You need at least {n} players.',
+    wordCount: 'The phrase must have exactly {n} words (one per letter).',
+    wordLetter: 'Word {i} ("{word}") must start with {letter}.',
+    selfVote: "Voting for yourself doesn't count!",
+  },
+};
+
+let lang = localStorage.getItem('acromania_lang') || (navigator.language?.startsWith('pt') ? 'pt' : 'en');
+
+function t(key, params) {
+  let s = (I18N[lang] && I18N[lang][key]) || I18N.pt[key] || key;
+  if (params) for (const [k, v] of Object.entries(params)) s = s.replace(`{${k}}`, v);
+  return s;
+}
+
+function themeText(theme) {
+  if (!theme) return '';
+  return typeof theme === 'string' ? theme : (theme[lang] || theme.pt);
+}
+
+function applyStatic() {
+  document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  $('name').placeholder = t('namePh');
+  $('phrase').placeholder = t('phrasePh');
+  $('conn').textContent = t('reconnecting');
+  $('lang-pt').classList.toggle('active', lang === 'pt');
+  $('lang-en').classList.toggle('active', lang === 'en');
+}
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('acromania_lang', l);
+  applyStatic();
+  if (state) render(state.phase); // re-render textos dinâmicos da fase atual
+}
+
+// ------------------------------------------------------------------ jogo
 const $ = (id) => document.getElementById(id);
 let ws = null;
 let state = null;
@@ -264,6 +393,9 @@ let joined = false;
 let clockSkew = 0;
 
 $('name').value = myName;
+$('lang-pt').onclick = () => setLang('pt');
+$('lang-en').onclick = () => setLang('en');
+applyStatic();
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -278,7 +410,7 @@ function connect() {
   };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === 'error') return showError(msg.error);
+    if (msg.type === 'error') return showError(t(msg.code, msg.params));
     if (msg.type === 'state') {
       const prevPhase = state?.phase;
       state = msg;
@@ -305,7 +437,7 @@ $('btn-join').onclick = join;
 $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
 function join() {
   const name = $('name').value.trim();
-  if (!name) return showError('Escolhe um nome aí!');
+  if (!name) return showError(t('needName'));
   myName = name;
   localStorage.setItem('acromania_name', name);
   joined = true;
@@ -369,8 +501,8 @@ function playerRows(containerId, showStatus) {
     const div = document.createElement('div');
     div.className = 'prow' + (p.id === state.you.id ? ' me' : '');
     let status = '';
-    if (showStatus === 'writing' && p.submitted) status = '<span class="status">✅ enviou</span>';
-    if (showStatus === 'voting' && p.voted) status = '<span class="status">🗳️ votou</span>';
+    if (showStatus === 'writing' && p.submitted) status = `<span class="status">${t('statusSent')}</span>`;
+    if (showStatus === 'voting' && p.voted) status = `<span class="status">${t('statusVoted')}</span>`;
     div.innerHTML = `<span>${esc(p.name)}${status}</span><span class="score">${p.score} pts</span>`;
     c.appendChild(div);
   }
@@ -400,16 +532,14 @@ function render(prevPhase) {
     show('s-lobby');
     playerRows('lobby-players');
     $('btn-start').disabled = state.players.length < 2;
-    $('btn-start').textContent = state.players.length < 2
-      ? 'Esperando mais jogadores… (mínimo 2)'
-      : 'Começar torneio (5 rodadas)';
+    $('btn-start').textContent = state.players.length < 2 ? t('waitingPlayers') : t('start');
     return;
   }
 
   if (state.phase === 'writing') {
     show('s-writing');
-    $('w-round').textContent = `Rodada ${state.round} de ${state.totalRounds}`;
-    $('w-theme').textContent = state.theme;
+    $('w-round').textContent = t('round', { r: state.round, t: state.totalRounds });
+    $('w-theme').textContent = themeText(state.theme);
     if (prevPhase !== 'writing') {
       renderLetters('w-letters');
       $('phrase').value = '';
@@ -423,8 +553,8 @@ function render(prevPhase) {
 
   if (state.phase === 'voting') {
     show('s-voting');
-    $('v-round').textContent = `Rodada ${state.round} de ${state.totalRounds} — votação`;
-    $('v-theme').textContent = state.theme;
+    $('v-round').textContent = t('roundVoting', { r: state.round, t: state.totalRounds });
+    $('v-theme').textContent = themeText(state.theme);
     const c = $('v-entries');
     c.innerHTML = '';
     for (const e of state.entries) {
@@ -433,7 +563,7 @@ function render(prevPhase) {
       const voted = e.idx === state.yourVote;
       div.className = 'entry' + (mine ? ' mine' : '') + (voted ? ' voted' : '');
       div.dataset.idx = e.idx;
-      div.innerHTML = `“${esc(e.text)}”` + (mine ? '<span class="tag">essa é a sua 😉</span>' : voted ? '<span class="tag">seu voto ✅</span>' : '');
+      div.innerHTML = `“${esc(e.text)}”` + (mine ? `<span class="tag">${t('yours')}</span>` : voted ? `<span class="tag">${t('yourVote')}</span>` : '');
       c.appendChild(div);
     }
     return;
@@ -441,22 +571,24 @@ function render(prevPhase) {
 
   if (state.phase === 'results') {
     show('s-results');
-    $('r-round').textContent = `Rodada ${state.round} de ${state.totalRounds} — resultado`;
-    $('r-theme').textContent = state.results.theme;
+    $('r-round').textContent = t('roundResults', { r: state.round, t: state.totalRounds });
+    $('r-theme').textContent = themeText(state.results.theme);
     const c = $('r-entries');
     c.innerHTML = '';
     if (state.results.nobody) {
-      c.innerHTML = '<div class="card" style="text-align:center">😴 Ninguém enviou frase nessa rodada…</div>';
+      c.innerHTML = `<div class="card" style="text-align:center">${t('nobody')}</div>`;
     } else {
       const top = state.results.entries[0]?.votes || 0;
       for (const r of state.results.entries) {
         const div = document.createElement('div');
         div.className = 'result' + (r.votes === top && top > 0 ? ' winner' : '');
+        const author = r.author ? esc(r.author) : t('leftGame');
+        const voteWord = r.votes === 1 ? t('vote1') : t('voteN');
         div.innerHTML = `
           <div class="phrase">“${esc(r.text)}”</div>
           <div class="meta">
-            <span>por <b>${esc(r.author)}</b></span>
-            <span>${r.votes} voto${r.votes === 1 ? '' : 's'} · <span class="pts">+${r.points} pts</span></span>
+            <span>${t('by')} <b>${author}</b></span>
+            <span>${r.votes} ${voteWord} · <span class="pts">+${r.points} pts</span></span>
           </div>`;
         c.appendChild(div);
       }

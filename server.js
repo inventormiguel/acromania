@@ -20,32 +20,33 @@ const FINAL_MS = 25_000;
 const POINTS_PER_VOTE = 100;
 const MIN_PLAYERS_TO_START = 2;
 
+// temas nos dois idiomas — o cliente mostra conforme o idioma escolhido
 const THEMES = [
-  'Desculpa pra chegar atrasado no trabalho',
-  'Nome de filme de terror brasileiro',
-  'Slogan de político em ano de eleição',
-  'Mensagem no grupo da família',
-  'Nome de banda de garagem',
-  'Título de novela das nove',
-  'Coisa que o chefe fala na segunda-feira',
-  'Promessa de ano novo que ninguém cumpre',
-  'Nome de golpe da internet',
-  'Frase de para-choque de caminhão',
-  'Recado colado na geladeira',
-  'Nome de perfume barato',
-  'Manchete de jornal sensacionalista',
-  'Coisa que se fala no elevador',
-  'Nome de curso de coach',
-  'Legenda de foto de academia',
-  'Desculpa pra sair da festa cedo',
-  'Nome de restaurante de beira de estrada',
-  'Frase de biscoito da sorte',
-  'Título de reality show',
-  'Coisa que a inteligência artificial pensa da gente',
-  'Nome de time de futebol de várzea',
-  'Assunto de reunião que podia ser um email',
-  'Frase de camiseta de turista',
-  'Nome de programa de TV de domingo',
+  { pt: 'Desculpa pra chegar atrasado no trabalho', en: 'Excuse for being late to work' },
+  { pt: 'Nome de filme de terror brasileiro', en: 'Name of a low-budget horror movie' },
+  { pt: 'Slogan de político em ano de eleição', en: "Politician's slogan in an election year" },
+  { pt: 'Mensagem no grupo da família', en: 'Message in the family group chat' },
+  { pt: 'Nome de banda de garagem', en: 'Name of a garage band' },
+  { pt: 'Título de novela das nove', en: 'Title of a prime-time soap opera' },
+  { pt: 'Coisa que o chefe fala na segunda-feira', en: 'Something the boss says on a Monday' },
+  { pt: 'Promessa de ano novo que ninguém cumpre', en: "New Year's resolution nobody keeps" },
+  { pt: 'Nome de golpe da internet', en: 'Name of an internet scam' },
+  { pt: 'Frase de para-choque de caminhão', en: 'Truck bumper sticker phrase' },
+  { pt: 'Recado colado na geladeira', en: 'Note stuck on the fridge' },
+  { pt: 'Nome de perfume barato', en: 'Name of a cheap perfume' },
+  { pt: 'Manchete de jornal sensacionalista', en: 'Tabloid headline' },
+  { pt: 'Coisa que se fala no elevador', en: 'Something you say in the elevator' },
+  { pt: 'Nome de curso de coach', en: 'Name of a life-coach course' },
+  { pt: 'Legenda de foto de academia', en: 'Gym selfie caption' },
+  { pt: 'Desculpa pra sair da festa cedo', en: 'Excuse to leave the party early' },
+  { pt: 'Nome de restaurante de beira de estrada', en: 'Name of a roadside diner' },
+  { pt: 'Frase de biscoito da sorte', en: 'Fortune cookie message' },
+  { pt: 'Título de reality show', en: 'Reality show title' },
+  { pt: 'Coisa que a inteligência artificial pensa da gente', en: 'What AI really thinks about us' },
+  { pt: 'Nome de time de futebol de várzea', en: 'Name of a Sunday-league soccer team' },
+  { pt: 'Assunto de reunião que podia ser um email', en: "Meeting topic that could've been an email" },
+  { pt: 'Frase de camiseta de turista', en: 'Tourist t-shirt phrase' },
+  { pt: 'Nome de programa de TV de domingo', en: 'Name of a Sunday TV show' },
 ];
 
 // letras comuns como iniciais em PT-BR (sem K W X Y Z)
@@ -98,18 +99,23 @@ function drawTheme() {
   return theme;
 }
 
+// erros viajam como código + parâmetros; o cliente traduz pro idioma do jogador
 function validatePhrase(text, letters) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length !== letters.length) {
-    return { ok: false, error: `A frase precisa ter exatamente ${letters.length} palavras (uma pra cada letra).` };
+    return { ok: false, code: 'wordCount', params: { n: letters.length } };
   }
   for (let i = 0; i < letters.length; i++) {
     const first = normalize(words[i]).replace(/[^A-Z]/g, '')[0];
     if (first !== letters[i]) {
-      return { ok: false, error: `A palavra ${i + 1} ("${words[i]}") precisa começar com ${letters[i]}.` };
+      return { ok: false, code: 'wordLetter', params: { i: i + 1, word: words[i], letter: letters[i] } };
     }
   }
   return { ok: true };
+}
+
+function sendError(ws, code, params) {
+  ws.send(JSON.stringify({ type: 'error', code, params: params || {} }));
 }
 
 function activePlayers() {
@@ -232,7 +238,7 @@ function endVoting() {
         player.score += points;
         scoresByName.set(player.name.toLowerCase(), player.score);
       }
-      return { text: e.text, author: player ? player.name : '(saiu do jogo)', votes, points };
+      return { text: e.text, author: player ? player.name : null, votes, points };
     })
     .sort((a, b) => b.votes - a.votes);
 
@@ -292,9 +298,9 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'join') {
       const name = String(msg.name || '').trim().slice(0, 20);
-      if (!name) return ws.send(JSON.stringify({ type: 'error', error: 'Escolhe um nome aí!' }));
+      if (!name) return sendError(ws, 'needName');
       const taken = activePlayers().some((p) => p.name.toLowerCase() === name.toLowerCase());
-      if (taken) return ws.send(JSON.stringify({ type: 'error', error: 'Já tem alguém com esse nome na sala.' }));
+      if (taken) return sendError(ws, 'nameTaken');
       me = {
         id: nextId++,
         name,
@@ -311,7 +317,7 @@ wss.on('connection', (ws) => {
     if (msg.type === 'start') {
       if (game.phase !== 'lobby') return;
       if (players.size < MIN_PLAYERS_TO_START) {
-        return ws.send(JSON.stringify({ type: 'error', error: `Precisa de pelo menos ${MIN_PLAYERS_TO_START} jogadores.` }));
+        return sendError(ws, 'minPlayers', { n: MIN_PLAYERS_TO_START });
       }
       startGame();
       return;
@@ -320,7 +326,7 @@ wss.on('connection', (ws) => {
     if (msg.type === 'submit' && game.phase === 'writing') {
       const text = String(msg.text || '').trim().slice(0, 120);
       const check = validatePhrase(text, game.letters);
-      if (!check.ok) return ws.send(JSON.stringify({ type: 'error', error: check.error }));
+      if (!check.ok) return sendError(ws, check.code, check.params);
       game.submissions.set(me.id, text);
       broadcast();
       maybeEndWritingEarly();
@@ -332,7 +338,7 @@ wss.on('connection', (ws) => {
       const entry = game.entries.find((e) => e.idx === idx);
       if (!entry) return;
       if (entry.playerId === me.id) {
-        return ws.send(JSON.stringify({ type: 'error', error: 'Votar em si mesmo não vale, belesma!' }));
+        return sendError(ws, 'selfVote');
       }
       game.votes.set(me.id, idx);
       broadcast();
