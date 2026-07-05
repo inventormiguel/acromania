@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Acromania</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #12071f;
+    --card: #241238;
+    --card2: #2f1a47;
+    --accent: #ffb703;
+    --accent2: #fb5607;
+    --pink: #ff006e;
+    --purple: #8338ec;
+    --blue: #3a86ff;
+    --green: #06d6a0;
+    --text: #f4ecff;
+    --muted: #a58fc4;
+  }
+  body {
+    background: radial-gradient(1200px 800px at 50% -10%, #2b1052 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  h1.logo {
+    font-size: 44px;
+    letter-spacing: 2px;
+    margin: 12px 0 4px;
+    background: linear-gradient(90deg, var(--accent), var(--pink), var(--purple), var(--blue));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-transform: uppercase;
+    font-weight: 800;
+  }
+  .tagline { color: var(--muted); margin-bottom: 20px; font-size: 14px; }
+  .screen { width: 100%; max-width: 560px; display: none; flex-direction: column; gap: 14px; }
+  .screen.active { display: flex; }
+  .card {
+    background: var(--card);
+    border: 1px solid #3d2560;
+    border-radius: 16px;
+    padding: 18px;
+  }
+  input[type=text] {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 2px solid #4a2d73;
+    background: #1a0c2e;
+    color: var(--text);
+    font-size: 17px;
+    outline: none;
+  }
+  input[type=text]:focus { border-color: var(--purple); }
+  button {
+    padding: 14px 18px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(90deg, var(--accent2), var(--pink));
+    color: #fff;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform .08s;
+  }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.secondary { background: var(--card2); border: 1px solid #4a2d73; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+
+  /* header de rodada */
+  .roundbar {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; color: var(--muted);
+  }
+  .timer {
+    font-size: 26px; font-weight: 800; color: var(--accent);
+    min-width: 54px; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .timer.urgent { color: var(--pink); animation: pulse .5s infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.15); } }
+
+  .theme {
+    font-size: 20px; font-weight: 700; text-align: center; line-height: 1.35;
+  }
+  .letters { display: flex; justify-content: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+  .letter {
+    width: 54px; height: 54px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 800; color: #12071f;
+    box-shadow: 0 4px 0 rgba(0,0,0,.35);
+  }
+  .letter:nth-child(5n+1) { background: var(--accent); }
+  .letter:nth-child(5n+2) { background: var(--pink); color: #fff; }
+  .letter:nth-child(5n+3) { background: var(--green); }
+  .letter:nth-child(5n+4) { background: var(--blue); color: #fff; }
+  .letter:nth-child(5n+5) { background: var(--purple); color: #fff; }
+  .letter.ok { outline: 3px solid var(--green); }
+  .letter.bad { outline: 3px solid var(--pink); }
+
+  .hint { font-size: 13px; color: var(--muted); text-align: center; }
+  .error {
+    background: #4a1030; border: 1px solid var(--pink); color: #ffb3d1;
+    border-radius: 10px; padding: 10px 14px; font-size: 14px; display: none;
+  }
+  .error.show { display: block; }
+  .waiting { text-align: center; color: var(--green); font-weight: 700; font-size: 16px; }
+
+  /* votação */
+  .entry {
+    background: var(--card2); border: 2px solid #4a2d73; border-radius: 14px;
+    padding: 16px; font-size: 17px; cursor: pointer; transition: border-color .15s, transform .08s;
+    line-height: 1.4;
+  }
+  .entry:active { transform: scale(.98); }
+  .entry.mine { opacity: .55; cursor: default; border-style: dashed; }
+  .entry.voted { border-color: var(--green); background: #14382f; }
+  .entry .tag { font-size: 12px; color: var(--muted); display: block; margin-top: 6px; }
+
+  /* resultados */
+  .result {
+    background: var(--card2); border-radius: 14px; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .result .phrase { font-size: 17px; font-weight: 600; line-height: 1.35; }
+  .result .meta { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); }
+  .result .pts { color: var(--accent); font-weight: 800; }
+  .result.winner { border: 2px solid var(--accent); }
+  .result.winner .phrase::before { content: '👑 '; }
+
+  /* placar */
+  .board { display: flex; flex-direction: column; gap: 8px; }
+  .prow {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--card2); border-radius: 10px; padding: 10px 14px; font-size: 15px;
+  }
+  .prow .status { font-size: 12px; color: var(--green); margin-left: 8px; }
+  .prow .score { font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .prow.me { border: 1px solid var(--purple); }
+
+  /* pódio */
+  .podium { text-align: center; }
+  .champion { font-size: 30px; font-weight: 800; color: var(--accent); margin: 10px 0; }
+  .confetti { font-size: 40px; }
+
+  .section-title {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .conn {
+    position: fixed; top: 10px; right: 12px; font-size: 12px; color: var(--pink); display: none;
+  }
+  .conn.show { display: block; }
+</style>
+</head>
+<body>
+  <div class="conn" id="conn">reconectando…</div>
+  <h1 class="logo">Acromania</h1>
+  <div class="tagline">tema + letras sorteadas → a frase mais criativa vence</div>
+
+  <!-- JOIN -->
+  <div class="screen active" id="s-join">
+    <div class="card">
+      <div class="section-title">Como você quer ser chamado?</div>
+      <div class="row">
+        <input type="text" id="name" maxlength="20" placeholder="Seu nome" autocomplete="off">
+        <button id="btn-join" style="flex:0 0 auto">Entrar</button>
+      </div>
+      <div class="error" id="err-join"></div>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div class="screen" id="s-lobby">
+    <div class="card">
+      <div class="section-title">Sala de espera</div>
+      <div class="board" id="lobby-players"></div>
+    </div>
+    <button id="btn-start">Começar torneio (5 rodadas)</button>
+    <div class="hint">Compartilha o link com a galera — dá pra entrar até no meio da partida.</div>
+    <div class="error" id="err-lobby"></div>
+  </div>
+
+  <!-- ESCRITA -->
+  <div class="screen" id="s-writing">
+    <div class="card">
+      <div class="roundbar">
+        <span id="w-round"></span>
+        <span class="timer" id="w-timer"></span>
+      </div>
+      <div class="theme" id="w-theme"></div>
+      <div class="letters" id="w-letters"></div>
+      <div id="w-form">
+        <input type="text" id="phrase" maxlength="120" placeholder="Escreve tua frase aqui…" autocomplete="off">
+        <div class="hint" style="margin:8px 0">Cada palavra começa com a letra na ordem</div>
+        <button id="btn-submit" style="width:100%">Enviar frase</button>
+        <div class="error" id="err-write"></div>
+      </div>
+      <div class="waiting" id="w-waiting" style="display:none">✅ Frase enviada! Esperando os outros…</div>
+    </div>
+    <div class="card">
+      <div class="section-title">Jogadores</div>
+      <div class="board" id="w-players"></div>
+    </div>
+  </div>
+
+  <!-- VOTAÇÃO -->
+  <div class="screen" id="s-voting">
+    <div class="card">
+      <div class="roundbar">
+        <span id="v-round"></span>
+        <span class="timer" id="v-timer"></span>
+      </div>
+      <div class="theme" id="v-theme"></div>
+      <div class="hint" style="margin-top:6px">Vota na melhor frase (na sua não vale 😄)</div>
+    </div>
+    <div id="v-entries" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div class="error" id="err-vote"></div>
+  </div>
+
+  <!-- RESULTADOS -->
+  <div class="screen" id="s-results">
+    <div class="card">
+      <div class="roundbar">
+        <span id="r-round"></span>
+        <span class="timer" id="r-timer"></span>
+      </div>
+      <div class="theme" id="r-theme"></div>
+    </div>
+    <div id="r-entries" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div class="card">
+      <div class="section-title">Placar</div>
+      <div class="board" id="r-players"></div>
+    </div>
+  </div>
+
+  <!-- FINAL -->
+  <div class="screen" id="s-final">
+    <div class="card podium">
+      <div class="confetti">🎉🏆🎉</div>
+      <div class="section-title">Campeão do torneio</div>
+      <div class="champion" id="f-champion"></div>
+      <div class="board" id="f-board" style="text-align:left;margin-top:14px"></div>
+      <div class="hint" style="margin-top:14px">Voltando pra sala de espera… <span id="f-timer"></span></div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ws = null;
+let state = null;
+let myName = localStorage.getItem('acromania_name') || '';
+let joined = false;
+let clockSkew = 0;
+
+$('name').value = myName;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+  ws.onopen = () => {
+    $('conn').classList.remove('show');
+    if (joined && myName) ws.send(JSON.stringify({ type: 'join', name: myName }));
+  };
+  ws.onclose = () => {
+    $('conn').classList.add('show');
+    setTimeout(connect, 1500);
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'error') return showError(msg.error);
+    if (msg.type === 'state') {
+      const prevPhase = state?.phase;
+      state = msg;
+      clockSkew = msg.now - Date.now();
+      render(prevPhase);
+    }
+  };
+}
+connect();
+
+function sendMsg(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+
+function showError(text) {
+  const map = { 'lobby': 'err-lobby', 'writing': 'err-write', 'voting': 'err-vote' };
+  const id = joined ? (map[state?.phase] || 'err-lobby') : 'err-join';
+  const el = $(id);
+  el.textContent = text;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ---- join
+$('btn-join').onclick = join;
+$('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
+function join() {
+  const name = $('name').value.trim();
+  if (!name) return showError('Escolhe um nome aí!');
+  myName = name;
+  localStorage.setItem('acromania_name', name);
+  joined = true;
+  sendMsg({ type: 'join', name });
+}
+
+$('btn-start').onclick = () => sendMsg({ type: 'start' });
+
+// ---- escrita
+$('btn-submit').onclick = submitPhrase;
+$('phrase').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPhrase(); });
+$('phrase').addEventListener('input', paintLetterFeedback);
+function submitPhrase() {
+  sendMsg({ type: 'submit', text: $('phrase').value });
+}
+
+function normalizeWord(w) {
+  return w.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
+}
+
+function paintLetterFeedback() {
+  if (!state || state.phase !== 'writing') return;
+  const words = $('phrase').value.trim().split(/\s+/).filter(Boolean);
+  [...$('w-letters').children].forEach((el, i) => {
+    el.classList.remove('ok', 'bad');
+    if (i < words.length) {
+      const first = normalizeWord(words[i])[0];
+      el.classList.add(first === state.letters[i] ? 'ok' : 'bad');
+    }
+  });
+}
+
+// ---- votação (delegação)
+$('v-entries').onclick = (e) => {
+  const el = e.target.closest('.entry');
+  if (!el || el.classList.contains('mine')) return;
+  sendMsg({ type: 'vote', idx: Number(el.dataset.idx) });
+};
+
+// ---- timer
+setInterval(() => {
+  if (!state || !state.endsAt) return;
+  const left = Math.max(0, Math.ceil((state.endsAt - (Date.now() + clockSkew)) / 1000));
+  const ids = { writing: 'w-timer', voting: 'v-timer', results: 'r-timer', final: 'f-timer' };
+  const el = $(ids[state.phase] || '');
+  if (!el) return;
+  el.textContent = `${left}s`;
+  el.classList.toggle('urgent', left <= 5 && (state.phase === 'writing' || state.phase === 'voting'));
+}, 250);
+
+// ---- render
+function show(id) {
+  document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+function playerRows(containerId, showStatus) {
+  const c = $(containerId);
+  c.innerHTML = '';
+  for (const p of state.players) {
+    const div = document.createElement('div');
+    div.className = 'prow' + (p.id === state.you.id ? ' me' : '');
+    let status = '';
+    if (showStatus === 'writing' && p.submitted) status = '<span class="status">✅ enviou</span>';
+    if (showStatus === 'voting' && p.voted) status = '<span class="status">🗳️ votou</span>';
+    div.innerHTML = `<span>${esc(p.name)}${status}</span><span class="score">${p.score} pts</span>`;
+    c.appendChild(div);
+  }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderLetters(containerId) {
+  const c = $(containerId);
+  c.innerHTML = '';
+  for (const l of state.letters) {
+    const div = document.createElement('div');
+    div.className = 'letter';
+    div.textContent = l;
+    c.appendChild(div);
+  }
+}
+
+function render(prevPhase) {
+  if (!joined) return show('s-join');
+
+  if (state.phase === 'lobby') {
+    show('s-lobby');
+    playerRows('lobby-players');
+    $('btn-start').disabled = state.players.length < 2;
+    $('btn-start').textContent = state.players.length < 2
+      ? 'Esperando mais jogadores… (mínimo 2)'
+      : 'Começar torneio (5 rodadas)';
+    return;
+  }
+
+  if (state.phase === 'writing') {
+    show('s-writing');
+    $('w-round').textContent = `Rodada ${state.round} de ${state.totalRounds}`;
+    $('w-theme').textContent = state.theme;
+    if (prevPhase !== 'writing') {
+      renderLetters('w-letters');
+      $('phrase').value = '';
+      paintLetterFeedback();
+    }
+    $('w-form').style.display = state.youSubmitted ? 'none' : 'block';
+    $('w-waiting').style.display = state.youSubmitted ? 'block' : 'none';
+    playerRows('w-players', 'writing');
+    return;
+  }
+
+  if (state.phase === 'voting') {
+    show('s-voting');
+    $('v-round').textContent = `Rodada ${state.round} de ${state.totalRounds} — votação`;
+    $('v-theme').textContent = state.theme;
+    const c = $('v-entries');
+    c.innerHTML = '';
+    for (const e of state.entries) {
+      const div = document.createElement('div');
+      const mine = e.idx === state.yourEntryIdx;
+      const voted = e.idx === state.yourVote;
+      div.className = 'entry' + (mine ? ' mine' : '') + (voted ? ' voted' : '');
+      div.dataset.idx = e.idx;
+      div.innerHTML = `“${esc(e.text)}”` + (mine ? '<span class="tag">essa é a sua 😉</span>' : voted ? '<span class="tag">seu voto ✅</span>' : '');
+      c.appendChild(div);
+    }
+    return;
+  }
+
+  if (state.phase === 'results') {
+    show('s-results');
+    $('r-round').textContent = `Rodada ${state.round} de ${state.totalRounds} — resultado`;
+    $('r-theme').textContent = state.results.theme;
+    const c = $('r-entries');
+    c.innerHTML = '';
+    if (state.results.nobody) {
+      c.innerHTML = '<div class="card" style="text-align:center">😴 Ninguém enviou frase nessa rodada…</div>';
+    } else {
+      const top = state.results.entries[0]?.votes || 0;
+      for (const r of state.results.entries) {
+        const div = document.createElement('div');
+        div.className = 'result' + (r.votes === top && top > 0 ? ' winner' : '');
+        div.innerHTML = `
+          <div class="phrase">“${esc(r.text)}”</div>
+          <div class="meta">
+            <span>por <b>${esc(r.author)}</b></span>
+            <span>${r.votes} voto${r.votes === 1 ? '' : 's'} · <span class="pts">+${r.points} pts</span></span>
+          </div>`;
+        c.appendChild(div);
+      }
+    }
+    playerRows('r-players');
+    return;
+  }
+
+  if (state.phase === 'final') {
+    show('s-final');
+    const podium = state.podium || [];
+    $('f-champion').textContent = podium[0] ? podium[0].name : '—';
+    const c = $('f-board');
+    c.innerHTML = '';
+    podium.forEach((p, i) => {
+      const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}º`;
+      const div = document.createElement('div');
+      div.className = 'prow';
+      div.innerHTML = `<span>${medal} ${esc(p.name)}</span><span class="score">${p.score} pts</span>`;
+      c.appendChild(div);
+    });
+    return;
+  }
+}
+</script>
+</body>
+</html>
