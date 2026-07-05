@@ -6,6 +6,7 @@
 <title>Acromania</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow-x: hidden; max-width: 100%; }
   :root {
     --bg: #12071f;
     --card: #241238;
@@ -43,7 +44,7 @@
   }
   .tagline { color: var(--muted); margin-bottom: 20px; font-size: 14px; }
 
-  /* layout: jogo à esquerda, chat à direita (empilha no celular) */
+  /* layout: jogo à esquerda, chat à direita (no desktop) */
   .layout {
     display: flex; gap: 16px; width: 100%; max-width: 920px;
     justify-content: center; align-items: flex-start;
@@ -51,10 +52,38 @@
   #game-col { flex: 1 1 560px; max-width: 560px; min-width: 0; }
   #chat-col { flex: 0 0 320px; display: none; position: sticky; top: 54px; }
   #chat-col.show { display: block; }
+
+  /* alternador Jogo/Chat — só no celular, com a pessoa dentro da sala */
+  .mobile-tabs { display: none; width: 100%; max-width: 560px; gap: 8px; margin-bottom: 2px; }
+  .mobile-tabs button {
+    flex: 1; padding: 12px; font-size: 15px; font-weight: 700; border-radius: 12px;
+    background: var(--card2); border: 1px solid #4a2d73; color: var(--muted); position: relative;
+  }
+  .mobile-tabs button.active {
+    background: linear-gradient(90deg, var(--purple), var(--blue)); color: #fff; border-color: transparent;
+  }
+  .tab-badge {
+    display: none; position: absolute; top: -7px; right: -7px; min-width: 20px; height: 20px;
+    padding: 0 5px; border-radius: 10px; background: var(--pink); color: #fff;
+    font-size: 12px; font-weight: 800; line-height: 20px;
+  }
+  .tab-badge.show { display: inline-block; }
+
   @media (max-width: 919px) {
     .layout { flex-direction: column; align-items: center; }
-    #game-col { width: 100%; }
+    #game-col { width: 100%; max-width: 560px; }
     #chat-col { position: static; width: 100%; max-width: 560px; flex: none; }
+    body.joined .mobile-tabs { display: flex; }
+    body.joined.tab-chat #game-col { display: none; }
+    body.joined.tab-game #chat-col { display: none; }
+  }
+  /* telas bem estreitas: encolhe o topo pra sobrar espaço pro jogo */
+  @media (max-width: 560px) {
+    body { padding: 12px; padding-top: 50px; }
+    h1.logo { font-size: 34px; margin: 6px 0 2px; }
+    .tagline { font-size: 12px; margin-bottom: 14px; }
+    .card { padding: 15px; }
+    .letter { width: 52px; height: 52px; font-size: 26px; }
   }
 
   .screen { width: 100%; display: none; flex-direction: column; gap: 14px; }
@@ -215,8 +244,10 @@
   .msg b { margin-right: 4px; }
   .msg.sys { color: var(--muted); font-style: italic; font-size: 13px; }
   .chat-row { display: flex; gap: 8px; }
-  .chat-row input { flex: 1; padding: 10px 14px; font-size: 15px; }
-  .chat-row button { flex: 0 0 auto; padding: 10px 14px; font-size: 15px; }
+  .chat-row input { flex: 1; padding: 12px 14px; font-size: 16px; }
+  .chat-row button { flex: 0 0 auto; padding: 12px 16px; font-size: 15px; }
+
+  button.ghost { background: var(--card2); border: 1px solid #4a2d73; color: var(--text); font-size: 15px; }
 </style>
 </head>
 <body>
@@ -234,6 +265,10 @@
   <div class="tagline" data-i18n="tagline"></div>
 
   <div class="layout">
+  <div class="mobile-tabs" id="mobile-tabs">
+    <button id="tab-game" class="active" data-i18n="tabGame"></button>
+    <button id="tab-chat"><span data-i18n="tabChat"></span><span class="tab-badge" id="chat-badge"></span></button>
+  </div>
   <div id="game-col">
 
   <!-- JOIN -->
@@ -256,6 +291,7 @@
       <div class="board" id="lobby-players"></div>
     </div>
     <button id="btn-start"></button>
+    <button id="btn-share" class="ghost" data-i18n="shareLink"></button>
     <div class="hint" data-i18n="shareHint"></div>
     <div class="error" id="err-lobby"></div>
     <div class="card">
@@ -395,6 +431,10 @@ const I18N = {
     chatTitle: '💬 Chat da sala',
     chatPh: 'Manda uma mensagem…',
     chatSend: 'Enviar',
+    tabGame: '🎮 Jogo',
+    tabChat: '💬 Chat',
+    shareLink: '🔗 Copiar link do jogo',
+    linkCopied: '✅ Link copiado!',
     sysJoined: '👋 {name} entrou na sala',
     sysLeft: '🚪 {name} saiu da sala',
     needName: 'Escolhe um nome aí!',
@@ -447,6 +487,10 @@ const I18N = {
     chatTitle: '💬 Room chat',
     chatPh: 'Type a message…',
     chatSend: 'Send',
+    tabGame: '🎮 Game',
+    tabChat: '💬 Chat',
+    shareLink: '🔗 Copy game link',
+    linkCopied: '✅ Link copied!',
     sysJoined: '👋 {name} joined the room',
     sysLeft: '🚪 {name} left the room',
     needName: 'Pick a name!',
@@ -526,10 +570,10 @@ function connect() {
     }
     if (msg.type === 'chatHistory') {
       $('chat-list').innerHTML = '';
-      msg.messages.forEach(appendChat);
+      msg.messages.forEach((m) => appendChat(m, false));
       return;
     }
-    if (msg.type === 'chat') return appendChat(msg);
+    if (msg.type === 'chat') return appendChat(msg, true);
     if (msg.type === 'state') {
       const prevPhase = state?.phase;
       state = msg;
@@ -555,7 +599,53 @@ function updateTopbar() {
   $('langbar').classList.toggle('locked', joined);
   $('btn-leave').classList.toggle('show', joined);
   $('chat-col').classList.toggle('show', joined);
+  document.body.classList.toggle('joined', joined);
+  if (!joined) setMobileTab('game'); // reset ao sair
 }
+
+// ---- abas Jogo/Chat (só no celular)
+let mobileTab = 'game';
+let unread = 0;
+const isMobileView = () => window.innerWidth < 920;
+
+function setMobileTab(tab) {
+  mobileTab = tab;
+  document.body.classList.toggle('tab-game', tab === 'game');
+  document.body.classList.toggle('tab-chat', tab === 'chat');
+  $('tab-game').classList.toggle('active', tab === 'game');
+  $('tab-chat').classList.toggle('active', tab === 'chat');
+  if (tab === 'chat') {
+    unread = 0;
+    updateBadge();
+    const list = $('chat-list');
+    list.scrollTop = list.scrollHeight;
+  }
+}
+
+function updateBadge() {
+  const b = $('chat-badge');
+  b.textContent = unread > 9 ? '9+' : String(unread);
+  b.classList.toggle('show', unread > 0);
+}
+
+$('tab-game').onclick = () => setMobileTab('game');
+$('tab-chat').onclick = () => setMobileTab('chat');
+setMobileTab('game');
+
+// quando volta pro desktop, o chat fica sempre visível → zera o aviso
+window.addEventListener('resize', () => { if (!isMobileView()) { unread = 0; updateBadge(); } });
+
+// ---- compartilhar link
+$('btn-share').onclick = async () => {
+  const url = location.href;
+  try {
+    if (navigator.share && isMobileView()) { await navigator.share({ title: 'Acromania', url }); return; }
+    await navigator.clipboard.writeText(url);
+  } catch (_) { /* usuário cancelou ou sem permissão */ }
+  const btn = $('btn-share');
+  btn.textContent = t('linkCopied');
+  setTimeout(() => { btn.textContent = t('shareLink'); }, 1800);
+};
 
 // ---- chat
 const CHAT_COLORS = ['#ffb703', '#ff006e', '#06d6a0', '#3a86ff', '#c77dff', '#fb5607', '#80ed99', '#f72585'];
@@ -565,7 +655,7 @@ function nameColor(name) {
   return CHAT_COLORS[h % CHAT_COLORS.length];
 }
 
-function appendChat(msg) {
+function appendChat(msg, isLive) {
   const list = $('chat-list');
   const div = document.createElement('div');
   if (msg.system) {
@@ -579,6 +669,11 @@ function appendChat(msg) {
   list.appendChild(div);
   while (list.children.length > 80) list.removeChild(list.firstChild);
   if (atBottom) list.scrollTop = list.scrollHeight;
+  // aviso de mensagem nova na aba Chat quando estou na aba Jogo (no celular)
+  if (isLive && !msg.system && msg.name !== myName && isMobileView() && mobileTab !== 'chat') {
+    unread++;
+    updateBadge();
+  }
 }
 
 function sendChat() {
