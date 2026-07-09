@@ -159,6 +159,28 @@ function recordGame(room) {
   saveRanking();
 }
 
+// ---------------------------------------------------------------- estado vivo (sobrevive a restart/deploy)
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
+const RESUME_GRACE_MS = 8000; // fôlego mínimo ao voltar de um deploy
+
+let savedState = {};
+try { savedState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch (_) { /* sem estado salvo ainda */ }
+
+let stateSaveTimer = null;
+function persistState() {
+  clearTimeout(stateSaveTimer);
+  stateSaveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      const snap = {};
+      for (const lang of Object.keys(rooms)) snap[lang] = rooms[lang].snapshot();
+      fs.writeFileSync(STATE_FILE, JSON.stringify(snap));
+    } catch (err) {
+      console.error('erro salvando estado vivo:', err.message);
+    }
+  }, 400);
+}
+
 // ---------------------------------------------------------------- helpers
 function normalize(s) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
@@ -191,12 +213,13 @@ function sendError(ws, code, params) {
 }
 
 // ---------------------------------------------------------------- sala (uma por idioma)
-function createRoom(lang) {
+function createRoom(lang, saved) {
   const room = {
     lang,
-    players: new Map(), // ws -> player
+    players: new Map(),      // ws -> player (conexões vivas)
+    roster: new Map(),       // key -> {name, activeFromRound} (sobrevive a quedas e a deploy)
     nextId: 1,
-    scoresByName: new Map(),
+    scoresByName: new Map(), // key -> pontos
     game: null,
     phaseTimer: null,
     chatLog: [],
@@ -208,14 +231,16 @@ function createRoom(lang) {
       round: 0,
       theme: null,
       letters: [],
-      letterCounts: [], // quantidades pré-sorteadas pra variar bem (ex: [4,3,5,3,4])
+      letterCounts: [], // quantidades pré-sorteadas pra variar bem (ex: [4,3,2,3,4])
       usedLetterSets: new Set(),
+      usedThemes: new Set(), // guarda o theme.pt (string) pra sobreviver a serialização
       endsAt: 0,
-      submissions: new Map(),
-      votes: new Map(),
-      entries: [],
+      submissions: new Map(), // key -> texto
+      votes: new Map(),       // key -> idx votado
+      entries: [],            // [{idx, key, name, text}]
       lastResults: null,
-      usedThemes: new Set(),
+      paused: false,
+      remainingMs: 0,
     };
   }
   room.game = freshGame();
@@ -248,10 +273,10 @@ function createRoom(lang) {
 
   function drawTheme() {
     const g = room.game;
-    const available = THEMES.filter((t) => !g.usedThemes.has(t));
+    const available = THEMES.filter((t) => !g.usedThemes.has(t.pt));
     const pool = available.length ? available : THEMES;
     const theme = pool[Math.floor(Math.random() * pool.length)];
-    g.usedThemes.add(theme);
+    g.usedThemes.add(theme.pt);
     return theme;
   }
 
@@ -266,7 +291,8 @@ function createRoom(lang) {
       totalRounds: TOTAL_ROUNDS,
       theme: g.theme,
       letters: g.letters,
-      endsAt: g.endsAt,
+      endsAt: g.paused ? 0 : g.endsAt,
+      paused: g.paused,
       now: Date.now(),
       youSpectator: spectator,
       you: { id: forPlayer.id, name: forPlayer.name, score: forPlayer.score },
@@ -276,19 +302,19 @@ function createRoom(lang) {
           name: p.name,
           score: p.score,
           waiting: !inRound(p) && g.phase !== 'lobby',
-          submitted: g.submissions.has(p.id),
-          voted: g.votes.has(p.id),
+          submitted: g.submissions.has(p.key),
+          voted: g.votes.has(p.key),
         }))
         .sort((a, b) => b.score - a.score),
     };
 
     if (g.phase === 'writing') {
-      base.youSubmitted = g.submissions.has(forPlayer.id);
+      base.youSubmitted = g.submissions.has(forPlayer.key);
     }
     if (g.phase === 'voting') {
       base.entries = g.entries.map((e) => ({ idx: e.idx, text: e.text }));
-      base.yourEntryIdx = g.entries.find((e) => e.playerId === forPlayer.id)?.idx ?? null;
-      base.yourVote = g.votes.get(forPlayer.id) ?? null;
+      base.yourEntryIdx = g.entries.find((e) => e.key === forPlayer.key)?.idx ?? null;
+      base.yourVote = g.votes.get(forPlayer.key) ?? null;
     }
     if (g.phase === 'results' || g.phase === 'final') {
       base.results = g.lastResults;
@@ -318,14 +344,49 @@ function createRoom(lang) {
     for (const p of room.activePlayers()) {
       try { p.ws.send(payload); } catch (_) {}
     }
+    persistState();
   };
 
+  // qual função encerra a fase atual (usada pra re-armar o timer ao despausar)
+  function phaseEndFn() {
+    return { writing: endWriting, voting: endVoting, results: nextRoundOrFinal, final: backToLobby }[room.game.phase];
+  }
+
   function setPhase(phase, durationMs, onEnd) {
-    room.game.phase = phase;
-    room.game.endsAt = durationMs ? Date.now() + durationMs : 0;
+    const g = room.game;
+    g.phase = phase;
+    g.paused = false;
+    g.endsAt = durationMs ? Date.now() + durationMs : 0;
+    g.remainingMs = durationMs || 0;
     clearTimeout(room.phaseTimer);
     if (durationMs) room.phaseTimer = setTimeout(onEnd, durationMs);
     room.broadcast();
+    persistState();
+  }
+
+  // congela a partida (ninguém online / deploy) sem perder nada
+  function pauseGame() {
+    const g = room.game;
+    if (g.paused || !g.endsAt) return;
+    g.remainingMs = Math.max(1000, g.endsAt - Date.now());
+    g.paused = true;
+    clearTimeout(room.phaseTimer);
+    persistState();
+  }
+
+  // descongela quando alguém volta, re-armando o timer com o tempo que faltava
+  function resumeGame() {
+    const g = room.game;
+    if (!g.paused) return;
+    const fn = phaseEndFn();
+    if (!fn) { g.paused = false; return; }
+    const ms = Math.max(1000, g.remainingMs || 1000);
+    g.paused = false;
+    g.endsAt = Date.now() + ms;
+    clearTimeout(room.phaseTimer);
+    room.phaseTimer = setTimeout(fn, ms);
+    room.broadcast();
+    persistState();
   }
 
   room.startGame = () => {
@@ -335,7 +396,8 @@ function createRoom(lang) {
     for (const p of room.activePlayers()) {
       p.score = 0;
       p.activeFromRound = 1;
-      room.scoresByName.set(p.name.toLowerCase(), 0);
+      room.scoresByName.set(p.key, 0);
+      room.roster.set(p.key, { name: p.name, activeFromRound: 1 });
     }
     startRound();
   };
@@ -353,7 +415,9 @@ function createRoom(lang) {
 
   function endWriting() {
     const g = room.game;
-    const entries = [...g.submissions.entries()].map(([playerId, text]) => ({ playerId, text }));
+    const entries = [...g.submissions.entries()].map(([key, text]) => ({
+      key, name: (room.roster.get(key) && room.roster.get(key).name) || key, text,
+    }));
     if (entries.length === 0) {
       g.lastResults = { theme: g.theme, letters: g.letters, entries: [], nobody: true };
       return setPhase('results', RESULTS_MS, nextRoundOrFinal);
@@ -373,12 +437,11 @@ function createRoom(lang) {
       .map((e) => {
         const votes = voteCount.get(e.idx) || 0;
         const points = votes * POINTS_PER_VOTE;
-        const player = room.activePlayers().find((p) => p.id === e.playerId);
-        if (player) {
-          player.score += points;
-          room.scoresByName.set(player.name.toLowerCase(), player.score);
-        }
-        return { text: e.text, author: player ? player.name : null, votes, points };
+        const total = (room.scoresByName.get(e.key) || 0) + points;
+        room.scoresByName.set(e.key, total);
+        const player = room.activePlayers().find((p) => p.key === e.key);
+        if (player) player.score = total;
+        return { text: e.text, author: e.name, votes, points };
       })
       .sort((a, b) => b.votes - a.votes);
 
@@ -387,10 +450,7 @@ function createRoom(lang) {
   }
 
   function nextRoundOrFinal() {
-    if (room.players.size === 0) {
-      room.game = freshGame();
-      return;
-    }
+    if (room.players.size === 0) { pauseGame(); return; } // ninguém online: congela, não zera
     if (room.game.round >= TOTAL_ROUNDS) {
       recordGame(room);
       setPhase('final', FINAL_MS, backToLobby);
@@ -402,15 +462,19 @@ function createRoom(lang) {
   function backToLobby() {
     room.game = freshGame();
     room.scoresByName = new Map();
-    for (const p of room.activePlayers()) p.activeFromRound = 1;
+    for (const p of room.activePlayers()) {
+      p.activeFromRound = 1;
+      room.roster.set(p.key, { name: p.name, activeFromRound: 1 });
+    }
     room.broadcast();
+    persistState();
   }
 
   room.maybeEndWritingEarly = () => {
     const g = room.game;
-    if (g.phase !== 'writing') return;
+    if (g.phase !== 'writing' || g.paused) return;
     const active = room.activePlayers().filter(inRound);
-    if (active.length > 0 && active.every((p) => g.submissions.has(p.id))) {
+    if (active.length > 0 && active.every((p) => g.submissions.has(p.key))) {
       clearTimeout(room.phaseTimer);
       endWriting();
     }
@@ -418,12 +482,12 @@ function createRoom(lang) {
 
   room.maybeEndVotingEarly = () => {
     const g = room.game;
-    if (g.phase !== 'voting') return;
+    if (g.phase !== 'voting' || g.paused) return;
     const eligible = room.activePlayers().filter(inRound).filter((p) => {
-      const own = g.entries.find((e) => e.playerId === p.id);
+      const own = g.entries.find((e) => e.key === p.key);
       return g.entries.length > (own ? 1 : 0);
     });
-    if (eligible.length > 0 && eligible.every((p) => g.votes.has(p.id))) {
+    if (eligible.length > 0 && eligible.every((p) => g.votes.has(p.key))) {
       clearTimeout(room.phaseTimer);
       endVoting();
     }
@@ -431,43 +495,109 @@ function createRoom(lang) {
 
   room.join = (ws, name) => {
     const g = room.game;
+    const key = name.toLowerCase();
+    const existing = room.roster.get(key);
+    const reconnect = !!existing && g.phase !== 'lobby'; // voltando pra uma partida em andamento
+    const activeFromRound = existing
+      ? existing.activeFromRound
+      : (g.phase === 'lobby' || g.phase === 'final') ? 1 : g.round + 1;
+    room.roster.set(key, { name, activeFromRound });
     const player = {
       id: room.nextId++,
       name,
-      score: room.scoresByName.get(name.toLowerCase()) || 0, // reconexão mantém pontos
-      // entrou no meio de uma rodada? assiste e só joga a partir da próxima
-      activeFromRound: (g.phase === 'lobby' || g.phase === 'final') ? 1 : g.round + 1,
+      key,
+      score: room.scoresByName.get(key) || 0, // reconexão mantém pontos
+      activeFromRound,
       ws,
     };
     room.players.set(ws, player);
+    if (g.paused) resumeGame(); // alguém voltou → descongela a partida
     room.broadcast();
     try { ws.send(JSON.stringify({ type: 'chatHistory', messages: room.chatLog })); } catch (_) {}
-    room.chat({ system: 'joined', name: player.name });
+    if (!reconnect) room.chat({ system: 'joined', name: player.name });
+    persistState();
     return player;
   };
 
-  room.leave = (ws) => {
+  // forget=true: saída explícita (esquece o jogador). forget=false: queda/deploy (guarda pra reconectar)
+  room.leave = (ws, forget) => {
     const player = room.players.get(ws);
     if (!player) return;
     room.players.delete(ws);
-    if (room.players.size === 0) {
-      clearTimeout(room.phaseTimer);
-      room.game = freshGame();
-      room.scoresByName = new Map();
-      room.chatLog = [];
-    } else {
+    if (forget) {
+      room.roster.delete(player.key);
       room.chat({ system: 'left', name: player.name });
+    }
+    if (room.players.size === 0) {
+      if (forget) {
+        // último jogador saiu de propósito → encerra a sessão de vez
+        clearTimeout(room.phaseTimer);
+        room.game = freshGame();
+        room.scoresByName = new Map();
+        room.roster = new Map();
+        room.chatLog = [];
+      } else {
+        pauseGame(); // caiu geral (ou deploy) → congela e mantém tudo
+      }
+    } else {
       room.broadcast();
       room.maybeEndWritingEarly();
       room.maybeEndVotingEarly();
     }
+    persistState();
   };
+
+  // ---- snapshot pra sobreviver a restart/deploy
+  room.snapshot = () => {
+    const g = room.game;
+    return {
+      chatLog: room.chatLog,
+      scoresByName: Object.fromEntries(room.scoresByName),
+      roster: Object.fromEntries(room.roster),
+      game: {
+        phase: g.phase, round: g.round, theme: g.theme, letters: g.letters,
+        letterCounts: g.letterCounts, usedLetterSets: [...g.usedLetterSets],
+        usedThemes: [...g.usedThemes], endsAt: g.endsAt,
+        submissions: Object.fromEntries(g.submissions),
+        votes: Object.fromEntries(g.votes),
+        entries: g.entries, lastResults: g.lastResults,
+        paused: g.paused, remainingMs: g.remainingMs,
+      },
+    };
+  };
+
+  // ---- restauração no boot (partida em andamento volta PAUSADA, aguardando reconexão)
+  if (saved && saved.game) {
+    room.chatLog = Array.isArray(saved.chatLog) ? saved.chatLog : [];
+    room.scoresByName = new Map(Object.entries(saved.scoresByName || {}));
+    room.roster = new Map(Object.entries(saved.roster || {}));
+    const s = saved.game;
+    const g = room.game;
+    g.phase = s.phase || 'lobby';
+    g.round = s.round || 0;
+    g.theme = s.theme || null;
+    g.letters = s.letters || [];
+    g.letterCounts = s.letterCounts || [];
+    g.usedLetterSets = new Set(s.usedLetterSets || []);
+    g.usedThemes = new Set(s.usedThemes || []);
+    g.submissions = new Map(Object.entries(s.submissions || {}));
+    g.votes = new Map(Object.entries(s.votes || {}).map(([k, v]) => [k, Number(v)]));
+    g.entries = s.entries || [];
+    g.lastResults = s.lastResults || null;
+    if (g.phase !== 'lobby') {
+      const leftover = s.paused ? (s.remainingMs || RESUME_GRACE_MS) : Math.max(0, (s.endsAt || 0) - Date.now());
+      const phaseDur = { writing: WRITING_MS, voting: VOTING_MS, results: RESULTS_MS, final: FINAL_MS }[g.phase] || RESUME_GRACE_MS;
+      g.remainingMs = Math.min(Math.max(leftover, RESUME_GRACE_MS), phaseDur);
+      g.paused = true;
+      g.endsAt = 0;
+    }
+  }
 
   room.inRound = inRound;
   return room;
 }
 
-const rooms = { pt: createRoom('pt'), en: createRoom('en') };
+const rooms = { pt: createRoom('pt', savedState.pt), en: createRoom('en', savedState.en) };
 
 // ---------------------------------------------------------------- websocket
 wss.on('connection', (ws) => {
@@ -498,7 +628,7 @@ wss.on('connection', (ws) => {
     if (!me || !room) return;
 
     if (msg.type === 'leave') {
-      room.leave(ws);
+      room.leave(ws, true); // saída explícita: esquece o jogador
       me = null;
       room = null;
       ws.send(JSON.stringify({ type: 'left' }));
@@ -531,7 +661,8 @@ wss.on('connection', (ws) => {
       const text = String(msg.text || '').trim().slice(0, 120);
       const check = validatePhrase(text, g.letters);
       if (!check.ok) return sendError(ws, check.code, check.params);
-      g.submissions.set(me.id, text);
+      g.submissions.set(me.key, text);
+      persistState();
       room.broadcast();
       room.maybeEndWritingEarly();
       return;
@@ -542,8 +673,9 @@ wss.on('connection', (ws) => {
       const idx = Number(msg.idx);
       const entry = g.entries.find((e) => e.idx === idx);
       if (!entry) return;
-      if (entry.playerId === me.id) return sendError(ws, 'selfVote');
-      g.votes.set(me.id, idx);
+      if (entry.key === me.key) return sendError(ws, 'selfVote');
+      g.votes.set(me.key, idx);
+      persistState();
       room.broadcast();
       room.maybeEndVotingEarly();
       return;
@@ -551,7 +683,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (room) room.leave(ws);
+    if (room) room.leave(ws, false); // queda de conexão / deploy: guarda pra reconectar
     me = null;
     room = null;
   });
