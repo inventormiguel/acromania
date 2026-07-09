@@ -56,7 +56,7 @@ const wss = new WebSocketServer({ server });
 
 // ---------------------------------------------------------------- config
 const TOTAL_ROUNDS = 5;
-const WRITING_MS = 30_000;
+const WRITING_MS = 60_000;
 const VOTING_MS = 20_000;
 const RESULTS_MS = 10_000;
 const FINAL_MS = 25_000;
