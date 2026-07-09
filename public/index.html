@@ -142,8 +142,19 @@
     display: none;
   }
   #btn-leave.show { display: block; }
+  #btn-sound {
+    padding: 6px 10px; font-size: 15px; border-radius: 20px; margin-right: 8px;
+    background: var(--card2); border: 1px solid #4a2d73; color: var(--muted);
+  }
   .conn { font-size: 12px; color: var(--pink); display: none; margin-right: 10px; }
   .conn.show { display: inline; }
+
+  /* destaque no campo quando a rodada começa (chama a pessoa pra digitar) */
+  @keyframes inflash {
+    0%, 100% { border-color: #4a2d73; box-shadow: none; }
+    50% { border-color: var(--green); box-shadow: 0 0 0 3px rgba(6,214,160,.3); }
+  }
+  #phrase.flash { animation: inflash .5s ease 2; }
 
   /* header de rodada */
   .roundbar {
@@ -258,6 +269,7 @@
     </div>
     <div>
       <span class="conn" id="conn"></span>
+      <button id="btn-sound" title="som">🔊</button>
       <button id="btn-leave"></button>
     </div>
   </div>
@@ -702,6 +714,7 @@ $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); })
 function join() {
   const name = $('name').value.trim();
   if (!name) return showError(t('needName'));
+  initAudio(); // destrava o áudio nesse gesto do usuário
   myName = name;
   localStorage.setItem('acromania_name', name);
   joined = true;
@@ -710,7 +723,49 @@ function join() {
 }
 
 $('btn-leave').onclick = () => sendMsg({ type: 'leave' });
-$('btn-start').onclick = () => sendMsg({ type: 'start' });
+$('btn-start').onclick = () => { initAudio(); sendMsg({ type: 'start' }); };
+
+// ---- som (gerado no navegador, sem arquivo externo)
+let soundOn = localStorage.getItem('acromania_sound') !== 'off';
+let audioCtx = null;
+function initAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (_) {}
+}
+function beep(freq, startT, dur, type, gainVal) {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type || 'triangle';
+  o.frequency.value = freq;
+  const t0 = audioCtx.currentTime + startT;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(gainVal || 0.22, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0 + dur);
+}
+function playStart() { // início de rodada: dó–mi–sol subindo
+  if (!soundOn) return; initAudio();
+  beep(523.25, 0, 0.18, 'triangle', 0.25);
+  beep(659.25, 0.12, 0.18, 'triangle', 0.25);
+  beep(783.99, 0.24, 0.3, 'triangle', 0.28);
+}
+function playVote() { // começou a votação: dois toques rápidos
+  if (!soundOn) return; initAudio();
+  beep(440, 0, 0.13, 'sine', 0.2);
+  beep(660, 0.1, 0.2, 'sine', 0.2);
+}
+function updateSoundBtn() { $('btn-sound').textContent = soundOn ? '🔊' : '🔇'; }
+$('btn-sound').onclick = () => {
+  soundOn = !soundOn;
+  localStorage.setItem('acromania_sound', soundOn ? 'on' : 'off');
+  updateSoundBtn();
+  if (soundOn) playStart(); // toca uma amostrinha ao religar
+};
+updateSoundBtn();
 
 // ---- escrita
 $('btn-submit').onclick = submitPhrase;
@@ -832,6 +887,14 @@ function render(prevPhase) {
       renderLetters('w-letters');
       $('phrase').value = '';
       paintLetterFeedback();
+      if (!state.youSpectator) {
+        playStart();
+        if (!state.youSubmitted) {
+          const inp = $('phrase');
+          inp.classList.remove('flash'); void inp.offsetWidth; inp.classList.add('flash');
+          setTimeout(() => { try { inp.focus(); } catch (_) {} }, 80); // chama a pessoa pra digitar
+        }
+      }
     }
     const spect = state.youSpectator;
     $('w-form').style.display = (!spect && !state.youSubmitted) ? 'block' : 'none';
@@ -842,6 +905,7 @@ function render(prevPhase) {
   }
 
   if (state.phase === 'voting') {
+    if (prevPhase !== 'voting' && !state.youSpectator) playVote();
     show('s-voting');
     $('v-round').textContent = t('roundVoting', { r: state.round, t: state.totalRounds });
     $('v-theme').textContent = themeText(state.theme);
