@@ -689,6 +689,20 @@ wss.on('connection', (ws) => {
   });
 });
 
+// no deploy/restart, a Railway manda SIGTERM antes de matar: grava o estado na hora, sem esperar o debounce
+function flushStateSync() {
+  try {
+    clearTimeout(stateSaveTimer);
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const snap = {};
+    for (const lang of Object.keys(rooms)) snap[lang] = rooms[lang].snapshot();
+    fs.writeFileSync(STATE_FILE, JSON.stringify(snap));
+  } catch (_) {}
+}
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { flushStateSync(); process.exit(0); });
+}
+
 server.listen(PORT, () => {
   console.log(`Acromania rodando em http://localhost:${PORT} (salas: pt, en | ranking: ${DB_FILE})`);
 });

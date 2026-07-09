@@ -235,10 +235,41 @@
   .prow .pos { color: var(--muted); margin-right: 8px; min-width: 24px; display: inline-block; }
   .prow .wins { font-size: 12px; color: var(--muted); margin-left: 8px; }
 
-  /* pódio */
+  /* pódio / celebração */
   .podium { text-align: center; }
-  .champion { font-size: 30px; font-weight: 800; color: var(--accent); margin: 10px 0; }
-  .confetti { font-size: 40px; }
+  .trophy { font-size: 72px; line-height: 1; margin: 4px 0; display: inline-block; }
+  .trophy.pop { animation: trophy-pop .7s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes trophy-pop {
+    0% { transform: scale(0) rotate(-25deg); }
+    60% { transform: scale(1.25) rotate(10deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+  .champion {
+    font-size: 32px; font-weight: 800; margin: 6px 0 2px;
+    background: linear-gradient(90deg, var(--accent), var(--pink), var(--purple));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .you-won {
+    font-size: 18px; font-weight: 800; color: var(--green); margin: 6px 0;
+    animation: youwon-pulse .8s ease infinite alternate;
+  }
+  @keyframes youwon-pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
+  .applause { font-size: 26px; letter-spacing: 4px; margin: 2px 0 6px; }
+  .applause span { display: inline-block; animation: clap .6s ease infinite alternate; }
+  .applause span:nth-child(2) { animation-delay: .15s; }
+  .applause span:nth-child(3) { animation-delay: .3s; }
+  @keyframes clap { from { transform: translateY(0) rotate(-8deg); } to { transform: translateY(-6px) rotate(8deg); } }
+
+  /* camada de confete (por cima de tudo, sem bloquear cliques) */
+  #confetti-layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 60; }
+  .confetti-piece {
+    position: absolute; top: -24px; width: 10px; height: 14px; border-radius: 2px;
+    will-change: transform, opacity; animation: confetti-fall linear forwards;
+  }
+  @keyframes confetti-fall {
+    0% { transform: translateY(-24px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(106vh) rotate(760deg); opacity: .9; }
+  }
 
   .section-title {
     font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px;
@@ -273,6 +304,7 @@
       <button id="btn-leave"></button>
     </div>
   </div>
+  <div id="confetti-layer"></div>
   <h1 class="logo">Acromania</h1>
   <div class="tagline" data-i18n="tagline"></div>
 
@@ -369,9 +401,11 @@
   <!-- FINAL -->
   <div class="screen" id="s-final">
     <div class="card podium">
-      <div class="confetti">🎉🏆🎉</div>
+      <div class="trophy" id="f-trophy">🏆</div>
       <div class="section-title" data-i18n="championTitle"></div>
       <div class="champion" id="f-champion"></div>
+      <div class="you-won" id="f-youwon" data-i18n="youWon" style="display:none"></div>
+      <div class="applause"><span>👏</span><span>👏</span><span>👏</span></div>
       <div class="board" id="f-board" style="text-align:left;margin-top:14px"></div>
       <div class="hint" style="margin-top:14px"><span data-i18n="backLobby"></span> <span id="f-timer"></span></div>
     </div>
@@ -427,6 +461,7 @@ const I18N = {
     scoreTitle: 'Placar',
     nobody: '😴 Ninguém enviou frase nessa rodada…',
     championTitle: 'Campeão do torneio',
+    youWon: '🎉 Você venceu! 🎉',
     backLobby: 'Voltando pra sala de espera…',
     reconnecting: 'reconectando…',
     statusSent: '✅ enviou',
@@ -483,6 +518,7 @@ const I18N = {
     scoreTitle: 'Scoreboard',
     nobody: '😴 Nobody submitted a phrase this round…',
     championTitle: 'Tournament champion',
+    youWon: '🎉 You won! 🎉',
     backLobby: 'Back to the waiting room…',
     reconnecting: 'reconnecting…',
     statusSent: '✅ sent',
@@ -758,6 +794,57 @@ function playVote() { // começou a votação: dois toques rápidos
   beep(440, 0, 0.13, 'sine', 0.2);
   beep(660, 0.1, 0.2, 'sine', 0.2);
 }
+function playWin() { // campeão: fanfarra + aplausos
+  if (!soundOn) return; initAudio();
+  if (!audioCtx) return;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => beep(f, i * 0.16, 0.4, 'triangle', 0.28));
+  // aplausos: ruído branco filtrado com envelope que cresce e decai
+  try {
+    const dur = 2.4;
+    const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * dur), audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = audioCtx.createBufferSource(); src.buffer = buf;
+    const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 0.5;
+    const g = audioCtx.createGain();
+    const t0 = audioCtx.currentTime + 0.2;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.16, t0 + 0.4);
+    g.gain.linearRampToValueAtTime(0.1, t0 + 1.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+    src.start(t0); src.stop(t0 + dur);
+  } catch (_) {}
+}
+
+// ---- confete + celebração do campeão
+const CONFETTI_COLORS = ['#ffb703', '#ff006e', '#06d6a0', '#3a86ff', '#8338ec', '#fb5607'];
+function launchConfetti(n) {
+  const layer = $('confetti-layer');
+  layer.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti-piece';
+    p.style.left = (Math.random() * 100) + 'vw';
+    p.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    const dur = 2.6 + Math.random() * 2.2;
+    p.style.animationDuration = dur + 's';
+    p.style.animationDelay = (Math.random() * 1.5) + 's';
+    p.style.width = (7 + Math.random() * 7) + 'px';
+    p.style.height = (10 + Math.random() * 8) + 'px';
+    layer.appendChild(p);
+  }
+  clearTimeout(launchConfetti._t);
+  launchConfetti._t = setTimeout(() => { layer.innerHTML = ''; }, 6500);
+}
+function celebrate(champion) {
+  const trophy = $('f-trophy');
+  trophy.classList.remove('pop'); void trophy.offsetWidth; trophy.classList.add('pop');
+  const iWon = champion && joined && champion.name.toLowerCase() === myName.toLowerCase();
+  $('f-youwon').style.display = iWon ? 'block' : 'none';
+  launchConfetti(iWon ? 90 : 55); // ganhou? chove mais confete pra você
+  playWin();
+}
 function updateSoundBtn() { $('btn-sound').textContent = soundOn ? '🔊' : '🔇'; }
 $('btn-sound').onclick = () => {
   soundOn = !soundOn;
@@ -956,6 +1043,7 @@ function render(prevPhase) {
     show('s-final');
     const podium = state.podium || [];
     $('f-champion').textContent = podium[0] ? podium[0].name : '—';
+    if (prevPhase !== 'final') celebrate(podium[0]); // 🎉 troféu + confete + aplausos, uma vez
     const c = $('f-board');
     c.innerHTML = '';
     podium.forEach((p, i) => {
